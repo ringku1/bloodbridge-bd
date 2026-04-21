@@ -15,6 +15,7 @@ const morgan       = require('morgan');
 const authRoutes    = require('./routes/auth');
 const donorRoutes   = require('./routes/donors');
 const requestRoutes = require('./routes/requests');
+const verifyRoutes  = require('./routes/verify');
 const errorHandler  = require('./middleware/errorHandler');
 
 const app = express();
@@ -48,11 +49,10 @@ app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().
 app.use('/api/auth',     authRoutes);
 app.use('/api/donors',   donorRoutes);
 app.use('/api/requests', requestRoutes);
+app.use('/api/verify',   verifyRoutes);
 
 // More routes will be added here as we build each feature:
-// app.use('/api/verify',   verifyRoutes);
 // app.use('/api/call',     callRoutes);
-// app.use('/api/admin',    adminRoutes);
 // app.use('/api/requests', requestRoutes);
 // app.use('/api/verify',   verifyRoutes);
 // app.use('/api/call',     callRoutes);
