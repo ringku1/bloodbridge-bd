@@ -10,6 +10,8 @@
 const app    = require('./app');
 const prisma = require('./config/prisma');
 const redis  = require('./config/redis');
+const { startEligibilityWorker } = require('./workers/eligibilityWorker');
+const { startEscalationWorker }  = require('./workers/escalationWorker');
 
 const PORT = process.env.PORT || 3000;
 
@@ -22,6 +24,10 @@ async function startServer() {
 
     // Redis connection is established lazily by ioredis — log is handled
     // by the event listener in config/redis.js
+
+    // Start background workers
+    startEligibilityWorker(); // daily cron at 6AM BST
+    startEscalationWorker();  // Bull queue processor for 15/30 min escalations
 
     const server = app.listen(PORT, () => {
       console.log(`[Server] Listening on port ${PORT}  (${process.env.NODE_ENV || 'development'})`);
