@@ -59,7 +59,7 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 
 | Layer | Technology |
 |---|---|
-| Mobile | React Native (Expo managed), Zustand, Axios |
+| Mobile | React Native 0.79 (Expo SDK 54 managed), Zustand, Axios |
 | Backend | Node.js + Express |
 | Database | PostgreSQL + PostGIS (geospatial radius queries) |
 | Cache / Queue | Redis + Bull (delayed job queues) |
@@ -144,17 +144,29 @@ Make sure the following are installed before you begin:
 
 | Tool | Version | Install |
 |---|---|---|
-| Node.js | 18 or 20 | https://nodejs.org |
+| Node.js | 20 LTS or 24 | https://nodejs.org |
 | npm | 9+ | comes with Node.js |
 | Docker Desktop | latest | https://docs.docker.com/get-docker/ |
-| Expo CLI | latest | `npm install -g expo-cli` |
+| Expo Go (phone) | latest | Play Store / App Store |
 | Android Studio (optional) | latest | for Android emulator |
 
+> **Node.js version note:** Node 20 LTS and Node 24 both work. If you use Node 24, make sure Expo SDK is 54+ (this project uses SDK 54).
+>
+> **No Expo CLI install needed** — Expo is run directly from `node_modules`:
+> ```bash
+> ./node_modules/expo/bin/cli start
+> ```
+>
 > **Check versions:**
 > ```bash
 > node --version
 > docker --version
 > docker compose version
+> ```
+
+> **Docker permission (Linux only):** If you get `permission denied` on docker commands, run once:
+> ```bash
+> sudo usermod -aG docker $USER && newgrp docker
 > ```
 
 ---
@@ -186,7 +198,7 @@ NODE_ENV=development
 ### Step 3 — Start PostgreSQL and Redis via Docker
 
 ```bash
-docker-compose up -d postgres redis
+docker compose up -d postgres redis
 ```
 
 > This pulls the `postgis/postgis:15-3.3` image (includes PostGIS) and `redis:7-alpine`.
@@ -250,29 +262,29 @@ npm install
 Open `src/config.js` and set the right URL for your setup:
 
 ```js
-// Android emulator (default — already set)
-export const API_BASE_URL = 'http://10.0.2.2:3000/api';
-
 // Physical Android/iOS device on the same WiFi as your computer
-// Find your PC's IP: ipconfig (Windows) or ifconfig (Linux/Mac)
-export const API_BASE_URL = 'http://192.168.1.X:3000/api';
+// Find your PC's IP: ifconfig (Linux/Mac) or ipconfig (Windows)
+export const API_BASE_URL = 'http://192.168.0.110:3000/api'; // ← replace with your IP
+
+// Android emulator
+// export const API_BASE_URL = 'http://10.0.2.2:3000/api';
 ```
 
 ### Step 3 — Start Expo
 
 ```bash
-npx expo start
+./node_modules/expo/bin/cli start --clear
 ```
 
-A QR code appears. Choose:
+A QR code appears in the terminal. Choose:
 
-| Target | Command | Requirement |
+| Target | How | Requirement |
 |---|---|---|
-| Android emulator | Press `a` | Android Studio + AVD set up |
+| Physical device | Scan QR code with Expo Go | Expo Go app + same WiFi as PC |
+| Android emulator | Press `a` | Android Studio + AVD |
 | iOS simulator | Press `i` | macOS + Xcode |
-| Physical device | Scan QR code | Expo Go app installed |
 
-> Install Expo Go on your phone: [Android](https://play.google.com/store/apps/details?id=host.exp.exponent) · [iOS](https://apps.apple.com/app/expo-go/id982107779)
+> Install Expo Go: [Android](https://play.google.com/store/apps/details?id=host.exp.exponent) · [iOS](https://apps.apple.com/app/expo-go/id982107779)
 
 ---
 
@@ -283,12 +295,12 @@ Here is the full startup sequence every time you want to develop:
 ```bash
 # Terminal 1 — backend
 cd backend
-docker-compose up -d postgres redis   # start DB + Redis (idempotent)
-npm run dev                           # start Express server
+docker compose up -d postgres redis            # start DB + Redis (idempotent)
+npm run dev                                    # start Express server
 
 # Terminal 2 — mobile
 cd mobile
-npx expo start
+./node_modules/expo/bin/cli start --clear      # start Expo dev server
 ```
 
 ---
@@ -571,18 +583,38 @@ The project was built in this order (each step is a separate git commit):
 **`prisma migrate dev` fails with "connection refused"**
 → Docker isn't running, or postgres container isn't healthy yet.
 ```bash
-docker-compose ps          # check status
-docker-compose logs postgres  # check for errors
+docker compose ps             # check status
+docker compose logs postgres  # check for errors
 ```
+
+**Backend crashes with `FirebaseAppError: Invalid PEM`**
+→ Firebase credentials in `.env` are still placeholders. This is fine — the app runs in FCM mock mode automatically (push notifications print to console instead of being sent).
 
 **OTP not appearing**
 → Make sure `USE_MOCK_SMS=true` is in `.env` and watch the **backend terminal** (not the mobile app).
 
-**Mobile app can't reach backend**
-→ Check `API_BASE_URL` in `mobile/src/config.js`. Use `10.0.2.2` for Android emulator, your PC's LAN IP for physical device.
+**`npx expo start` gives `expo: not found`**
+→ Run Expo directly from node_modules:
+```bash
+./node_modules/expo/bin/cli start --clear
+```
 
-**PostGIS queries return no donors**
-→ Donors must have `verifiedStatus = VERIFIED` and `isAvailable = true` to appear in radius searches. Approve a donor via the admin endpoint first.
+**Expo Go shows "Project is incompatible with this version"**
+→ Your Expo Go version and `package.json` SDK version don't match. This project uses **SDK 54**. Update Expo Go on your phone to the latest version.
+
+**Metro bundler crashes with `ENOENT: no such file or directory`**
+→ A temp file was deleted mid-start. Use `--clear` flag:
+```bash
+./node_modules/expo/bin/cli start --clear
+```
+
+**Mobile app can't reach backend**
+→ Check `API_BASE_URL` in `mobile/src/config.js`. Use your PC's LAN IP (not localhost) for a physical device. Find it with `ifconfig` (Linux/Mac) or `ipconfig` (Windows).
+
+**PostGIS queries return `donorsNotified: 0`**
+→ Two possible reasons:
+1. Donor's `verifiedStatus` is not `VERIFIED` — approve them via the admin endpoint
+2. Donor is outside the 5km initial radius — either move the donor's location or use a hospital closer to the donor
 
 **`relation "User" does not exist`**
 → Run `npx prisma migrate dev --name init` from the `backend/` directory.
