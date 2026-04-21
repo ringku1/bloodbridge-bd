@@ -1,0 +1,118 @@
+// schema.prisma
+//
+// This is the single source of truth for the database structure.
+// Prisma reads this file to:
+//   1. Generate type-safe query helpers (npx prisma generate)
+//   2. Create/update database tables  (npx prisma migrate dev)
+//
+// After any change to this file, run BOTH commands above.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+// Enums are stored as strings in PostgreSQL.
+// The underscore format (A_POS) avoids issues with the "+" character in column values.
+
+enum BloodGroup {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  O_POS
+  O_NEG
+  AB_POS
+  AB_NEG
+}
+
+enum VerifiedStatus {
+  UNVERIFIED  // default — has not uploaded NID
+  PENDING     // NID uploaded, waiting for admin review
+  VERIFIED    // admin approved — donor appears in search results
+}
+
+enum RequestStatus {
+  OPEN        // actively looking for donors
+  MATCHED     // a donor has accepted
+  FULFILLED   // donation confirmed
+  EXPIRED     // no donor found in time
+}
+
+enum ResponseStatus {
+  NOTIFIED    // donor received push notification
+  ACCEPTED    // donor pressed "I'll donate"
+  REJECTED    // donor declined
+  DONATED     // donation confirmed by requester
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id             String         @id @default(uuid())
+  phone          String         @unique  // E.164 format: +8801XXXXXXXXX
+  phoneVerified  Boolean        @default(false)
+  name           String?
+  nidPhotoUrl    String?        // S3 key (not full URL) — generate presigned URL on demand
+  verifiedStatus VerifiedStatus @default(UNVERIFIED)
+  bloodGroup     BloodGroup?
+  latitude       Float?
+  longitude      Float?
+  district       String?
+  isAvailable    Boolean        @default(true)
+  lastDonatedAt  DateTime?
+  eligibleAgainAt DateTime?     // set to lastDonatedAt + 120 days on donation confirmation
+  fcmToken       String?        // Firebase Cloud Messaging device token for push notifications
+  createdAt      DateTime       @default(now())
+
+  requests   BloodRequest[]  @relation("RequesterRequests")
+  responses  DonorResponse[]
+  caregivers Caregiver[]
+}
+
+model BloodRequest {
+  id             String        @id @default(uuid())
+  requesterId    String
+  requester      User          @relation("RequesterRequests", fields: [requesterId], references: [id])
+  bloodGroup     BloodGroup
+  hospitalName   String
+  latitude       Float
+  longitude      Float
+  unitsNeeded    Int           @default(1)
+  status         RequestStatus @default(OPEN)
+  escalationLevel Int          @default(0)  // 0=initial, 1=expanded radius, 2=SMS caregivers
+  escalatedAt    DateTime?
+  expiresAt      DateTime
+  createdAt      DateTime      @default(now())
+
+  responses DonorResponse[]
+}
+
+model DonorResponse {
+  id                 String         @id @default(uuid())
+  requestId          String
+  request            BloodRequest   @relation(fields: [requestId], references: [id])
+  donorId            String
+  donor              User           @relation(fields: [donorId], references: [id])
+  status             ResponseStatus @default(NOTIFIED)
+  proxySessionId     String?        // Twilio Proxy session SID
+  notifiedAt         DateTime       @default(now())
+  respondedAt        DateTime?
+  donatedConfirmedAt DateTime?
+
+  @@unique([requestId, donorId])  // a donor can only respond once per request
+}
+
+model Caregiver {
+  id       String @id @default(uuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+  name     String
+  phone    String  // E.164 format
+  priority Int    @default(1)  // lower number = notified first
+}

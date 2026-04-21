@@ -1,0 +1,64 @@
+# docker-compose.yml
+#
+# Spins up three services locally:
+#   1. postgres  — PostgreSQL with PostGIS extension (for geospatial radius queries)
+#   2. redis     — In-memory store (OTP cache + Bull job queues)
+#   3. backend   — Our Express API
+#
+# Why postgis/postgis instead of plain postgres?
+#   The plain postgres image does NOT have PostGIS installed.
+#   We need PostGIS for ST_DWithin (find donors within X km).
+#
+# Run:
+#   docker-compose up -d            → start all services in background
+#   docker-compose up -d postgres redis  → start only DB + Redis (for local dev)
+#   docker-compose down             → stop all services
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgis/postgis:15-3.3
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: blooddonor
+    ports:
+      - "5432:5432"           # expose to host so Prisma CLI can migrate from outside Docker
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql   # runs once on first container creation
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d blooddonor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy    # wait until postgres passes health check
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/node_modules             # anonymous volume so container's node_modules
+                                      # is NOT overwritten by the host's (different OS)
+
+volumes:
+  pgdata:
