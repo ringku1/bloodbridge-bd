@@ -88,7 +88,7 @@ export default function HomeScreen({ navigation }) {
         >
           <Text style={styles.verificationBannerText}>
             {user?.verifiedStatus === 'PENDING'
-              ? '⏳  NID under review — you'll appear in searches once verified'
+              ? "⏳  NID under review — you'll appear in searches once verified"
               : '⚠️  Upload your NID to become a verified donor'}
           </Text>
           <Text style={styles.verificationBannerLink}>Verify now →</Text>

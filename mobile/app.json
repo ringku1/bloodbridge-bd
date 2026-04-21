@@ -3,6 +3,7 @@
     "name": "Blood Bridge",
     "slug": "blood-bridge",
     "version": "1.0.0",
+    "sdkVersion": "54.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {
