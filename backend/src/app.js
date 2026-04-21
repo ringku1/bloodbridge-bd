@@ -16,6 +16,7 @@ const authRoutes    = require('./routes/auth');
 const donorRoutes   = require('./routes/donors');
 const requestRoutes = require('./routes/requests');
 const verifyRoutes  = require('./routes/verify');
+const callRoutes    = require('./routes/call');
 const errorHandler  = require('./middleware/errorHandler');
 
 const app = express();
@@ -50,9 +51,7 @@ app.use('/api/auth',     authRoutes);
 app.use('/api/donors',   donorRoutes);
 app.use('/api/requests', requestRoutes);
 app.use('/api/verify',   verifyRoutes);
-
-// More routes will be added here as we build each feature:
-// app.use('/api/call',     callRoutes);
+app.use('/api/call',     callRoutes);
 // app.use('/api/requests', requestRoutes);
 // app.use('/api/verify',   verifyRoutes);
 // app.use('/api/call',     callRoutes);
