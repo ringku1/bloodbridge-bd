@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Blood Bridge",
+    "slug": "blood-bridge",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#DC2626"
+    },
+    "android": {
+      "package": "com.bloodbridge.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#DC2626"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.bloodbridge.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Blood Bridge uses your location to find nearby blood donors.",
+        "NSCameraUsageDescription": "Blood Bridge needs camera access to upload your NID photo for verification.",
+        "NSPhotoLibraryUsageDescription": "Blood Bridge needs gallery access to upload your NID photo."
+      }
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        { "color": "#DC2626" }
+      ],
+      "expo-location",
+      "expo-image-picker"
+    ]
+  }
+}

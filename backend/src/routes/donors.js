@@ -6,6 +6,7 @@
 // Endpoints:
 //   PUT  /api/donors/profile      — update name, blood group, GPS location, district
 //   PUT  /api/donors/fcm-token    — save Firebase push notification token
+//   PUT  /api/donors/availability — toggle isAvailable (e.g. donor going on holiday)
 //   POST /api/donors/log-donation — manually record a donation (locks donor for 120 days)
 //   GET  /api/donors/eligibility  — check if donor can donate + days remaining
 
@@ -63,6 +64,37 @@ router.put('/profile', async (req, res, next) => {
     });
 
     res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── PUT /api/donors/availability ────────────────────────────────────────────
+// Body: { isAvailable: true | false }
+//
+// Lets donors mark themselves unavailable when they can't donate (e.g. traveling).
+// Guards against re-enabling before the 120-day lockout expires.
+router.put('/availability', async (req, res, next) => {
+  try {
+    const { isAvailable } = req.body;
+
+    if (typeof isAvailable !== 'boolean') {
+      return res.status(400).json({ error: 'isAvailable must be true or false' });
+    }
+
+    // Prevent donors from marking themselves available during their 120-day wait
+    if (isAvailable === true && req.user.eligibleAgainAt && req.user.eligibleAgainAt > new Date()) {
+      return res.status(400).json({
+        error: `You cannot mark yourself available until ${req.user.eligibleAgainAt.toDateString()} (120-day donation wait).`,
+      });
+    }
+
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data:  { isAvailable },
+    });
+
+    res.json({ isAvailable, message: `You are now marked as ${isAvailable ? 'available' : 'unavailable'}.` });
   } catch (err) {
     next(err);
   }
