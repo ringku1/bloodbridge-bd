@@ -13,6 +13,7 @@ const cors         = require('cors');
 const helmet       = require('helmet');
 const morgan       = require('morgan');
 const authRoutes   = require('./routes/auth');
+const donorRoutes  = require('./routes/donors');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -43,10 +44,11 @@ app.use(express.json());
 // to verify the server is running before routing traffic to it
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-app.use('/api/auth', authRoutes);
+app.use('/api/auth',   authRoutes);
+app.use('/api/donors', donorRoutes);
 
 // More routes will be added here as we build each feature:
-// app.use('/api/donors',   donorRoutes);
+// app.use('/api/requests', requestRoutes);
 // app.use('/api/requests', requestRoutes);
 // app.use('/api/verify',   verifyRoutes);
 // app.use('/api/call',     callRoutes);
