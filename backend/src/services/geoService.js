@@ -24,23 +24,25 @@ async function findNearbyDonors({ lat, lng, bloodGroup, radiusKm }) {
 
   // Prisma.$queryRaw uses tagged template literals.
   // Values passed as ${variable} are automatically parameterized (no SQL injection risk).
+  // Note: Prisma keeps camelCase column names in PostgreSQL (not snake_case).
+  // So the actual columns are "fcmToken", "isAvailable", "verifiedStatus", "bloodGroup".
   const donors = await prisma.$queryRaw`
     SELECT
       id,
       name,
-      fcm_token    AS "fcmToken",
+      "fcmToken",
       latitude,
       longitude,
       district,
-      blood_group  AS "bloodGroup",
+      "bloodGroup",
       ST_Distance(
         ST_MakePoint(longitude, latitude)::geography,
         ST_MakePoint(${lng}, ${lat})::geography
       ) AS distance_meters
     FROM "User"
-    WHERE is_available     = true
-      AND verified_status  = 'VERIFIED'::"VerifiedStatus"
-      AND blood_group      = ${bloodGroup}::"BloodGroup"
+    WHERE "isAvailable"    = true
+      AND "verifiedStatus" = 'VERIFIED'::"VerifiedStatus"
+      AND "bloodGroup"     = ${bloodGroup}::"BloodGroup"
       AND latitude         IS NOT NULL
       AND longitude        IS NOT NULL
       AND ST_DWithin(

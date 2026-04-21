@@ -18,33 +18,49 @@
 
 const admin = require('firebase-admin');
 
-// Initialize Firebase Admin once — calling initializeApp() multiple times throws an error.
-// The || check prevents re-initialization if this module is somehow required twice.
-if (!admin.apps.length) {
+// Check if real Firebase credentials are provided.
+// The placeholder value in .env.example contains "your_key_here" — detect that.
+const hasFirebaseCreds =
+  process.env.FIREBASE_PROJECT_ID &&
+  process.env.FIREBASE_PRIVATE_KEY &&
+  !process.env.FIREBASE_PRIVATE_KEY.includes('your_key_here');
+
+// Only initialize Firebase if real credentials are present.
+// In development (USE_MOCK_FCM or missing creds), we skip init and log instead.
+// This prevents the "Invalid PEM" crash at startup when credentials aren't set yet.
+if (hasFirebaseCreds && !admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId:   process.env.FIREBASE_PROJECT_ID,
-      privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'), // .env escapes \n
+      privateKey:  process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'), // .env escapes \n
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
     }),
   });
+} else if (!hasFirebaseCreds) {
+  console.log('[FCM] No credentials found — running in mock mode (notifications logged to console)');
 }
 
 // Send a push notification to a single device token
 async function send(fcmToken, { title, body, data = {} }) {
-  if (!fcmToken) return; // donor hasn't registered their device yet
+  if (!fcmToken) return;
+
+  // Mock mode: log instead of sending a real push notification
+  if (!hasFirebaseCreds) {
+    console.log(`[FCM MOCK] To: ${fcmToken.slice(0, 20)}... | Title: ${title} | Body: ${body}`);
+    return;
+  }
 
   try {
     await admin.messaging().send({
       token: fcmToken,
       notification: { title, body },
-      data, // optional key-value pairs (e.g. requestId so the app can deep-link)
+      data,
       android: {
         priority: 'high', // ensures delivery even when phone is in Doze mode
       },
       apns: {
         payload: {
-          aps: { sound: 'default' }, // iOS plays notification sound
+          aps: { sound: 'default' },
         },
       },
     });
