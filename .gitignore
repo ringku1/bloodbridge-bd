@@ -1,0 +1,18 @@
+# Root-level gitignore
+# Each sub-project (backend/, mobile/) also has its own .gitignore
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+# Secrets — never commit these
+.env
+*.pem
