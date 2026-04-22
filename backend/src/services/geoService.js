@@ -19,7 +19,14 @@
 const prisma = require('../config/prisma');
 
 // Find verified, available donors of a specific blood group within a radius
+const VALID_BLOOD_GROUPS = ['A_POS', 'A_NEG', 'B_POS', 'B_NEG', 'O_POS', 'O_NEG', 'AB_POS', 'AB_NEG'];
+
 async function findNearbyDonors({ lat, lng, bloodGroup, radiusKm }) {
+  if (typeof lat !== 'number' || lat < -90  || lat > 90)  throw new Error('Invalid latitude');
+  if (typeof lng !== 'number' || lng < -180 || lng > 180) throw new Error('Invalid longitude');
+  if (radiusKm < 0.1 || radiusKm > 100) throw new Error('Radius must be 0.1–100 km');
+  if (!VALID_BLOOD_GROUPS.includes(bloodGroup)) throw new Error('Invalid blood group');
+
   const radiusMeters = radiusKm * 1000;
 
   // Prisma.$queryRaw uses tagged template literals.

@@ -1,34 +1,27 @@
 // routes/auth.js
 //
-// Handles phone-based OTP authentication.
+// Phone-based OTP authentication.
 //
 // Flow:
 //   1. POST /api/auth/send-otp   → generate OTP, store in Redis (5 min TTL), send via SMS
 //   2. POST /api/auth/verify-otp → check OTP, create user if new, return JWT
 //
-// Why OTP instead of password?
-//   In Bangladesh, many users don't have email or remember passwords.
-//   Phone OTP is familiar (used by bKash, Nagad, etc.) and more secure
-//   than passwords for a mobile-first app.
-//
-// Why Redis for OTP storage (not DB)?
-//   OTPs are temporary (5 min). Redis has native TTL support — keys
-//   automatically delete themselves. No cleanup job needed.
+// Brute-force protection:
+//   We track failed verify attempts in Redis per phone number.
+//   After 3 consecutive failures the phone is locked for 15 minutes.
+//   The lock key is "otp_attempts:<phone>" with a 900-second TTL.
 
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const prisma = require('../config/prisma');
-const redis = require('../config/redis');
+const jwt     = require('jsonwebtoken');
+const prisma  = require('../config/prisma');
+const redis   = require('../config/redis');
 const smsService = require('../services/smsService');
 
 const router = express.Router();
 
-// Bangladesh mobile number regex: +8801 followed by 3-9, then 8 digits
-// Covers all BD operators: Grameenphone (017x), Robi (018x), Banglalink (019x), etc.
 const BD_PHONE_REGEX = /^\+8801[3-9]\d{8}$/;
 
 function generateOtp() {
-  // 6-digit numeric OTP: 100000–999999
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
@@ -46,15 +39,17 @@ router.post('/send-otp', async (req, res, next) => {
 
     const otp = generateOtp();
 
-    // Store in Redis: key = "otp:+8801712345678", value = "482910", TTL = 300 seconds
+    // key = "otp:+8801...", value = OTP, TTL = 5 minutes
     await redis.setex(`otp:${phone}`, 300, otp);
+
+    // Clear any previous failed-attempt counter when a fresh OTP is requested
+    await redis.del(`otp_attempts:${phone}`);
 
     await smsService.send(
       phone,
       `Your Blood Bridge OTP is: ${otp}. Valid for 5 minutes. Do not share this code.`
     );
 
-    // Don't reveal whether the phone is already registered — prevents user enumeration
     res.json({ message: 'OTP sent successfully' });
   } catch (err) {
     next(err);
@@ -72,25 +67,34 @@ router.post('/verify-otp', async (req, res, next) => {
       return res.status(400).json({ error: 'phone and otp are required' });
     }
 
+    // ── Brute-force guard ──────────────────────────────────────────────────
+    const attemptsKey = `otp_attempts:${phone}`;
+    const attempts    = parseInt(await redis.get(attemptsKey) || '0', 10);
+
+    if (attempts >= 3) {
+      return res.status(429).json({
+        error: 'Too many failed OTP attempts. Request a new OTP and try again.',
+      });
+    }
+
     const storedOtp = await redis.get(`otp:${phone}`);
 
     if (!storedOtp || storedOtp !== otp) {
+      // Increment attempt counter; auto-expires after 15 minutes
+      await redis.setex(attemptsKey, 900, attempts + 1);
       return res.status(401).json({ error: 'Invalid or expired OTP' });
     }
 
-    // Delete OTP immediately after successful use — single-use only
-    await redis.del(`otp:${phone}`);
+    // OTP correct — clear both the OTP and the attempt counter
+    await redis.del(`otp:${phone}`, `otp_attempts:${phone}`);
 
-    // upsert: if phone exists → fetch user, if not → create new user
-    // This is how "registration" works — there's no separate register endpoint.
+    // upsert: if phone exists → fetch user; if not → create new user
     const user = await prisma.user.upsert({
       where:  { phone },
       create: { phone, phoneVerified: true },
       update: { phoneVerified: true },
     });
 
-    // Sign a JWT containing userId and phone
-    // The token is valid for 30 days (or whatever JWT_EXPIRES_IN is set to)
     const token = jwt.sign(
       { userId: user.id, phone: user.phone },
       process.env.JWT_SECRET,

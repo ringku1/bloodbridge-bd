@@ -1,7 +1,6 @@
 // routes/donors.js
 //
-// All donor-related actions. Every route here requires authentication
-// (the user must be logged in via JWT).
+// All donor-related actions. Every route here requires authentication.
 //
 // Endpoints:
 //   PUT  /api/donors/profile      — update name, blood group, GPS location, district
@@ -10,47 +9,49 @@
 //   POST /api/donors/log-donation — manually record a donation (locks donor for 120 days)
 //   GET  /api/donors/eligibility  — check if donor can donate + days remaining
 
-const express      = require('express');
-const prisma       = require('../config/prisma');
+const express        = require('express');
+const Joi            = require('joi');
+const prisma         = require('../config/prisma');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
-
-// All donor routes require a valid JWT
 router.use(authMiddleware);
 
+const BLOOD_GROUPS = ['A_POS', 'A_NEG', 'B_POS', 'B_NEG', 'O_POS', 'O_NEG', 'AB_POS', 'AB_NEG'];
+
+// ─── Validation schemas ───────────────────────────────────────────────────────
+
+const profileSchema = Joi.object({
+  name:       Joi.string().trim().min(2).max(100),
+  bloodGroup: Joi.string().valid(...BLOOD_GROUPS),
+  latitude:   Joi.number().min(-90).max(90),
+  longitude:  Joi.number().min(-180).max(180),
+  district:   Joi.string().trim().max(100),
+}).min(1); // at least one field must be present
+
+const fcmTokenSchema = Joi.object({
+  fcmToken: Joi.string().min(10).max(512).required(),
+});
+
+const donationSchema = Joi.object({
+  donatedAt: Joi.date().iso().max('now').optional(),
+});
+
 // ─── PUT /api/donors/profile ──────────────────────────────────────────────────
-// Body: { name, bloodGroup, latitude, longitude, district }
+// Body: { name?, bloodGroup?, latitude?, longitude?, district? }
 //
-// The donor fills this out after their first login.
-// latitude/longitude come from the device's GPS.
-// district is a string like "Dhaka", "Chattogram" — used as a human-readable label.
-//
-// Blood group must match one of the 8 enum values:
-//   A_POS, A_NEG, B_POS, B_NEG, O_POS, O_NEG, AB_POS, AB_NEG
+// latitude/longitude come from the device GPS.
+// district is a human-readable label like "Dhaka" or "Chattogram".
 router.put('/profile', async (req, res, next) => {
   try {
-    const { name, bloodGroup, latitude, longitude, district } = req.body;
-
-    // Only update fields that were actually sent — undefined fields are ignored by Prisma
-    const data = {};
-    if (name      !== undefined) data.name      = name;
-    if (bloodGroup !== undefined) data.bloodGroup = bloodGroup;
-    if (latitude  !== undefined) data.latitude  = latitude;
-    if (longitude !== undefined) data.longitude = longitude;
-    if (district  !== undefined) data.district  = district;
-
-    // Validate bloodGroup enum if provided
-    const validBloodGroups = ['A_POS', 'A_NEG', 'B_POS', 'B_NEG', 'O_POS', 'O_NEG', 'AB_POS', 'AB_NEG'];
-    if (bloodGroup && !validBloodGroups.includes(bloodGroup)) {
-      return res.status(400).json({
-        error: `Invalid blood group. Must be one of: ${validBloodGroups.join(', ')}`,
-      });
+    const { error, value } = profileSchema.validate(req.body, { abortEarly: false });
+    if (error) {
+      return res.status(400).json({ error: error.details.map((d) => d.message).join('; ') });
     }
 
     const user = await prisma.user.update({
       where: { id: req.user.id },
-      data,
+      data:  value,
       select: {
         id:             true,
         name:           true,
@@ -72,8 +73,7 @@ router.put('/profile', async (req, res, next) => {
 // ─── PUT /api/donors/availability ────────────────────────────────────────────
 // Body: { isAvailable: true | false }
 //
-// Lets donors mark themselves unavailable when they can't donate (e.g. traveling).
-// Guards against re-enabling before the 120-day lockout expires.
+// Guards against re-enabling during the 120-day lockout after a donation.
 router.put('/availability', async (req, res, next) => {
   try {
     const { isAvailable } = req.body;
@@ -82,7 +82,6 @@ router.put('/availability', async (req, res, next) => {
       return res.status(400).json({ error: 'isAvailable must be true or false' });
     }
 
-    // Prevent donors from marking themselves available during their 120-day wait
     if (isAvailable === true && req.user.eligibleAgainAt && req.user.eligibleAgainAt > new Date()) {
       return res.status(400).json({
         error: `You cannot mark yourself available until ${req.user.eligibleAgainAt.toDateString()} (120-day donation wait).`,
@@ -103,21 +102,18 @@ router.put('/availability', async (req, res, next) => {
 // ─── PUT /api/donors/fcm-token ────────────────────────────────────────────────
 // Body: { fcmToken }
 //
-// FCM (Firebase Cloud Messaging) token is a device-specific string that Firebase
-// uses to route push notifications to the right phone.
-// It changes when the app is reinstalled, so the mobile app calls this endpoint
-// on every startup to keep the token fresh.
+// FCM token is device-specific. The mobile app calls this on every startup
+// to keep it fresh (tokens can change on app reinstall).
 router.put('/fcm-token', async (req, res, next) => {
   try {
-    const { fcmToken } = req.body;
-
-    if (!fcmToken) {
-      return res.status(400).json({ error: 'fcmToken is required' });
+    const { error, value } = fcmTokenSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
     }
 
     await prisma.user.update({
       where: { id: req.user.id },
-      data:  { fcmToken },
+      data:  { fcmToken: value.fcmToken },
     });
 
     res.json({ message: 'FCM token updated' });
@@ -127,27 +123,18 @@ router.put('/fcm-token', async (req, res, next) => {
 });
 
 // ─── POST /api/donors/log-donation ────────────────────────────────────────────
-// Body: { donatedAt }  (ISO date string, e.g. "2026-04-22T10:00:00Z")
+// Body: { donatedAt? }  (ISO date string — defaults to now)
 //
-// This is for manually logging a donation (e.g. donated at a blood bank independently
-// of a request in the app). It locks the donor for 120 days.
-//
-// When a donation happens through the app (donor accepts a request + requester confirms),
-// the same logic runs in POST /api/requests/:id/confirm — but that route handles
-// the DonorResponse update too.
-//
-// 120 days = minimum wait between whole blood donations (WHO guideline).
+// Manually logs a donation (e.g. donated at a blood bank independently of the app).
+// Locks the donor for 120 days (WHO minimum wait between whole blood donations).
 router.post('/log-donation', async (req, res, next) => {
   try {
-    const { donatedAt } = req.body;
-
-    const donationDate = donatedAt ? new Date(donatedAt) : new Date();
-
-    if (isNaN(donationDate.getTime())) {
-      return res.status(400).json({ error: 'Invalid donatedAt date format. Use ISO 8601: 2026-04-22T10:00:00Z' });
+    const { error, value } = donationSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
     }
 
-    // eligibleAgainAt = donation date + 120 days
+    const donationDate    = value.donatedAt ? new Date(value.donatedAt) : new Date();
     const eligibleAgainAt = new Date(donationDate.getTime() + 120 * 24 * 60 * 60 * 1000);
 
     const user = await prisma.user.update({
@@ -166,8 +153,7 @@ router.post('/log-donation', async (req, res, next) => {
     });
 
     res.json({
-      message: 'Donation logged. You will be eligible to donate again on ' +
-               eligibleAgainAt.toDateString(),
+      message: `Donation logged. You will be eligible to donate again on ${eligibleAgainAt.toDateString()}.`,
       user,
     });
   } catch (err) {
@@ -176,23 +162,19 @@ router.post('/log-donation', async (req, res, next) => {
 });
 
 // ─── GET /api/donors/eligibility ─────────────────────────────────────────────
-// Returns whether the donor is currently eligible and how many days remain.
-//
-// This is shown on the donor's home screen: a countdown timer until they can
-// donate again, or a "You can donate now!" banner.
+// Returns whether the donor can donate today and how many days remain if not.
 router.get('/eligibility', async (req, res, next) => {
   try {
     const { isAvailable, eligibleAgainAt, lastDonatedAt } = req.user;
 
     if (isAvailable) {
       return res.json({
-        isAvailable:  true,
+        isAvailable:   true,
         daysRemaining: 0,
-        message:      'You are eligible to donate blood.',
+        message:       'You are eligible to donate blood.',
       });
     }
 
-    // Calculate how many full days remain
     const now          = new Date();
     const msRemaining  = eligibleAgainAt ? eligibleAgainAt - now : 0;
     const daysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24)));

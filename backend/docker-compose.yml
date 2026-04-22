@@ -1,64 +1,73 @@
 # docker-compose.yml
 #
-# Spins up three services locally:
-#   1. postgres  — PostgreSQL with PostGIS extension (for geospatial radius queries)
-#   2. redis     — In-memory store (OTP cache + Bull job queues)
-#   3. backend   — Our Express API
+# Spins up three services:
+#   1. postgres  — PostgreSQL 15 with PostGIS (for ST_DWithin radius queries)
+#   2. redis     — In-memory store + AOF persistence (OTP cache + Bull job queues)
+#   3. backend   — Express API (production image, no volume bind-mount)
 #
-# Why postgis/postgis instead of plain postgres?
-#   The plain postgres image does NOT have PostGIS installed.
-#   We need PostGIS for ST_DWithin (find donors within X km).
-#
-# Run:
-#   docker-compose up -d            → start all services in background
-#   docker-compose up -d postgres redis  → start only DB + Redis (for local dev)
-#   docker-compose down             → stop all services
+# Usage:
+#   docker-compose up -d                    → start everything
+#   docker-compose up -d postgres redis     → DB + Redis only (for local dev)
+#   docker-compose down                     → stop all services
+#   docker-compose down -v                  → stop and DELETE volumes (data loss!)
 
 version: '3.8'
 
 services:
+
   postgres:
     image: postgis/postgis:15-3.3
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: user
+      POSTGRES_USER:     user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: blooddonor
+      POSTGRES_DB:       blooddonor
     ports:
-      - "5432:5432"           # expose to host so Prisma CLI can migrate from outside Docker
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql   # runs once on first container creation
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d blooddonor"]
+      test:     ["CMD-SHELL", "pg_isready -U user -d blooddonor"]
       interval: 5s
-      timeout: 5s
-      retries: 5
+      timeout:  5s
+      retries:  5
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    # AOF (Append-Only File) persistence: every write is fsynced to disk.
+    # Survives container restarts — escalation Bull jobs are not lost.
+    command: redis-server --appendonly yes --appendfilename aof.aof
     ports:
       - "6379:6379"
+    volumes:
+      - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:     ["CMD", "redis-cli", "ping"]
       interval: 5s
-      timeout: 5s
-      retries: 5
+      timeout:  5s
+      retries:  5
 
   backend:
-    build: .
+    build:
+      context:    .
+      dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "3000:3000"
     depends_on:
       postgres:
-        condition: service_healthy    # wait until postgres passes health check
+        condition: service_healthy
       redis:
         condition: service_healthy
     env_file:
       - .env
-    volumes:
-      - .:/app
-      - /app/node_modules             # anonymous volume so container's node_modules
-                                      # is NOT overwritten by the host's (different OS)
+    # Run migrations automatically on container start, then launch the server.
+    # `prisma migrate deploy` is safe to run repeatedly — it's a no-op if already up to date.
+    command: >
+      sh -c "npx prisma migrate deploy && npm start"
 
 volumes:
   pgdata:
+  redisdata:

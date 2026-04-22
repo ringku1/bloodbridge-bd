@@ -1,51 +1,94 @@
 // server.js
 //
-// Entry point — starts the HTTP server and verifies connections to PostgreSQL and Redis.
+// Entry point — validates environment, starts the HTTP server, and connects to
+// PostgreSQL and Redis.
 //
 // Why separate app.js and server.js?
-//   app.js exports the Express app (logic).
+//   app.js exports the Express app (pure logic, no side effects).
 //   server.js starts listening on a port (side effect).
-//   This separation allows tests to import app.js without binding to a port.
+//   Tests import app.js without binding to a port.
 
 const app    = require('./app');
 const prisma = require('./config/prisma');
 const redis  = require('./config/redis');
 const { startEligibilityWorker } = require('./workers/eligibilityWorker');
-const { startEscalationWorker }  = require('./workers/escalationWorker');
+const { startEscalationWorker, escalationQueue } = require('./workers/escalationWorker');
 
 const PORT = process.env.PORT || 3000;
 
+// ─── Fail-fast secret validation ─────────────────────────────────────────────
+// If critical secrets are missing or still set to placeholder values, refuse to
+// start rather than running silently broken. Catches misconfigured deployments
+// before they serve real traffic.
+function validateEnvironment() {
+  const required = ['JWT_SECRET', 'DATABASE_URL', 'REDIS_URL'];
+  const placeholders = ['change_this', 'your_', 'changeme', 'secret_here'];
+
+  const missing = required.filter((k) => !process.env[k]);
+  if (missing.length) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    const insecure = required.filter((k) => {
+      const val = (process.env[k] || '').toLowerCase();
+      return placeholders.some((p) => val.includes(p));
+    });
+    if (insecure.length) {
+      throw new Error(
+        `Refusing to start: ${insecure.join(', ')} still contain placeholder values in production.`
+      );
+    }
+
+    if (!process.env.ADMIN_SECRET || process.env.ADMIN_SECRET.length < 32) {
+      throw new Error('ADMIN_SECRET must be at least 32 characters in production.');
+    }
+  }
+}
+
 async function startServer() {
   try {
-    // Verify DB is reachable before accepting traffic.
-    // If this throws, the process exits immediately with a clear error.
+    validateEnvironment();
+
     await prisma.$connect();
     console.log('[DB] PostgreSQL connected');
 
-    // Redis connection is established lazily by ioredis — log is handled
-    // by the event listener in config/redis.js
-
-    // Start background workers
-    startEligibilityWorker(); // daily cron at 6AM BST
-    startEscalationWorker();  // Bull queue processor for 15/30 min escalations
+    startEligibilityWorker();
+    startEscalationWorker();
 
     const server = app.listen(PORT, () => {
       console.log(`[Server] Listening on port ${PORT}  (${process.env.NODE_ENV || 'development'})`);
     });
 
     // ─── Graceful shutdown ────────────────────────────────────────────────────
-    // When the process receives SIGTERM (e.g. docker stop) or SIGINT (Ctrl+C):
-    //   1. Stop accepting new connections
-    //   2. Wait for in-flight requests to finish
-    //   3. Close DB and Redis connections cleanly
-    // Without this, abrupt shutdown can corrupt in-flight DB transactions.
+    // On SIGTERM / SIGINT:
+    //   1. Stop accepting new HTTP connections
+    //   2. Pause the Bull queue (stop picking up new jobs)
+    //   3. Disconnect DB and Redis cleanly
+    // A 30-second hard-kill ensures Docker doesn't wait forever.
     const shutdown = async (signal) => {
       console.log(`\n[Server] Received ${signal} — shutting down gracefully...`);
+
+      // Hard kill if graceful shutdown takes too long
+      const forceExit = setTimeout(() => {
+        console.error('[Server] Forced exit after 30s timeout');
+        process.exit(1);
+      }, 30_000);
+      forceExit.unref(); // don't keep process alive just for this timer
+
       server.close(async () => {
-        await prisma.$disconnect();
-        await redis.quit();
-        console.log('[Server] Shutdown complete');
-        process.exit(0);
+        try {
+          // Pause queue — stops pulling new jobs; in-flight jobs finish naturally
+          if (escalationQueue) await escalationQueue.pause(true);
+
+          await prisma.$disconnect();
+          await redis.quit();
+          console.log('[Server] Shutdown complete');
+          process.exit(0);
+        } catch (err) {
+          console.error('[Server] Error during shutdown:', err.message);
+          process.exit(1);
+        }
       });
     };
 

@@ -15,14 +15,10 @@
 //   3. Requester POSTs /confirm after donation
 //      → DonorResponse updated to DONATED
 //      → Request status set to FULFILLED
-//      → Donor locked for 120 days (isAvailable=false, eligibleAgainAt set)
-//      → Both updates in a single Prisma transaction (atomic)
-//
-// Note on escalation jobs:
-//   Bull queue setup is in workers/escalationWorker.js (Step 7).
-//   This file just schedules and cancels jobs — the worker file processes them.
+//      → Donor locked for 120 days (both writes in a single Prisma transaction)
 
 const express        = require('express');
+const Joi            = require('joi');
 const prisma         = require('../config/prisma');
 const authMiddleware = require('../middleware/auth');
 const fcmService     = require('../services/fcmService');
@@ -32,18 +28,30 @@ const redis          = require('../config/redis');
 const router = express.Router();
 router.use(authMiddleware);
 
+const BLOOD_GROUPS = ['A_POS', 'A_NEG', 'B_POS', 'B_NEG', 'O_POS', 'O_NEG', 'AB_POS', 'AB_NEG'];
+
+const createRequestSchema = Joi.object({
+  bloodGroup:   Joi.string().valid(...BLOOD_GROUPS).required(),
+  hospitalName: Joi.string().trim().min(2).max(255).required(),
+  latitude:     Joi.number().min(-90).max(90).required(),
+  longitude:    Joi.number().min(-180).max(180).required(),
+  unitsNeeded:  Joi.number().integer().min(1).max(10).default(1),
+});
+
+const confirmSchema = Joi.object({
+  donorId: Joi.string().uuid().required(),
+});
+
 // ─── POST /api/requests ───────────────────────────────────────────────────────
-// Body: { bloodGroup, hospitalName, latitude, longitude, unitsNeeded }
 // Creates a blood request and notifies nearby donors.
 router.post('/', async (req, res, next) => {
   try {
-    const { bloodGroup, hospitalName, latitude, longitude, unitsNeeded = 1 } = req.body;
-
-    if (!bloodGroup || !hospitalName || latitude === undefined || longitude === undefined) {
-      return res.status(400).json({
-        error: 'bloodGroup, hospitalName, latitude, and longitude are required',
-      });
+    const { error, value } = createRequestSchema.validate(req.body, { abortEarly: false });
+    if (error) {
+      return res.status(400).json({ error: error.details.map((d) => d.message).join('; ') });
     }
+
+    const { bloodGroup, hospitalName, latitude, longitude, unitsNeeded } = value;
 
     // Request expires after 6 hours if no donor is found
     const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
@@ -68,8 +76,6 @@ router.post('/', async (req, res, next) => {
       radiusKm: 5,
     });
 
-    // Create a DonorResponse row for each notified donor (status = NOTIFIED)
-    // This lets us track who was told about the request
     if (nearbyDonors.length > 0) {
       await prisma.donorResponse.createMany({
         data: nearbyDonors.map((donor) => ({
@@ -79,7 +85,6 @@ router.post('/', async (req, res, next) => {
         skipDuplicates: true,
       });
 
-      // Send push notification to all nearby donors
       await fcmService.sendToMany(
         nearbyDonors.map((d) => d.fcmToken),
         {
@@ -90,8 +95,7 @@ router.post('/', async (req, res, next) => {
       );
     }
 
-    // Schedule escalation jobs (Bull queue — implemented in Step 7)
-    // Wrapped in try/catch so a Redis failure doesn't block request creation
+    // Schedule escalation jobs (fail silently — doesn't block request creation)
     try {
       await scheduleEscalation(request.id);
     } catch (err) {
@@ -108,7 +112,6 @@ router.post('/', async (req, res, next) => {
 });
 
 // ─── GET /api/requests/active ─────────────────────────────────────────────────
-// Returns the logged-in requester's currently open requests.
 // "active" must be defined BEFORE "/:id" so Express doesn't treat it as an ID.
 router.get('/active', async (req, res, next) => {
   try {
@@ -120,9 +123,7 @@ router.get('/active', async (req, res, next) => {
       include: {
         responses: {
           include: {
-            donor: {
-              select: { id: true, name: true, verifiedStatus: true },
-            },
+            donor: { select: { id: true, name: true, verifiedStatus: true } },
           },
         },
       },
@@ -136,7 +137,6 @@ router.get('/active', async (req, res, next) => {
 });
 
 // ─── GET /api/requests/:id ────────────────────────────────────────────────────
-// Full request details — accessible by the requester or any notified donor.
 router.get('/:id', async (req, res, next) => {
   try {
     const request = await prisma.bloodRequest.findUnique({
@@ -162,9 +162,7 @@ router.get('/:id', async (req, res, next) => {
 });
 
 // ─── POST /api/requests/:id/accept ───────────────────────────────────────────
-// Donor accepts a blood request.
-// Updates their DonorResponse to ACCEPTED and the request status to MATCHED.
-// Cancels the escalation jobs (no need to expand radius if donor is found).
+// Donor accepts a blood request; cancels pending escalation jobs.
 router.post('/:id/accept', async (req, res, next) => {
   try {
     const request = await prisma.bloodRequest.findUnique({
@@ -179,8 +177,6 @@ router.post('/:id/accept', async (req, res, next) => {
       return res.status(409).json({ error: `Request is already ${request.status.toLowerCase()}` });
     }
 
-    // Both updates must succeed together — use a transaction
-    // If one fails, both are rolled back
     await prisma.$transaction([
       prisma.donorResponse.upsert({
         where:  { requestId_donorId: { requestId: request.id, donorId: req.user.id } },
@@ -193,7 +189,6 @@ router.post('/:id/accept', async (req, res, next) => {
       }),
     ]);
 
-    // Cancel escalation jobs since a donor was found
     try {
       await cancelEscalation(request.id);
     } catch (err) {
@@ -207,16 +202,16 @@ router.post('/:id/accept', async (req, res, next) => {
 });
 
 // ─── POST /api/requests/:id/confirm ──────────────────────────────────────────
-// Requester confirms that donation happened.
-// Updates the request to FULFILLED and locks the donor for 120 days.
-// Uses a Prisma transaction so both writes are atomic.
+// Requester confirms donation happened. Locks the donor for 120 days.
+// Uses a Prisma transaction — all three writes succeed or none do.
 router.post('/:id/confirm', async (req, res, next) => {
   try {
-    const { donorId } = req.body;
-
-    if (!donorId) {
-      return res.status(400).json({ error: 'donorId is required' });
+    const { error, value } = confirmSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
     }
+
+    const { donorId } = value;
 
     const request = await prisma.bloodRequest.findUnique({
       where: { id: req.params.id },
@@ -226,7 +221,6 @@ router.post('/:id/confirm', async (req, res, next) => {
       return res.status(404).json({ error: 'Request not found' });
     }
 
-    // Only the original requester can confirm their own request
     if (request.requesterId !== req.user.id) {
       return res.status(403).json({ error: 'Only the requester can confirm this donation' });
     }
@@ -234,19 +228,15 @@ router.post('/:id/confirm', async (req, res, next) => {
     const now             = new Date();
     const eligibleAgainAt = new Date(now.getTime() + 120 * 24 * 60 * 60 * 1000);
 
-    // Atomic transaction: confirm donation + lock donor — both or neither
     await prisma.$transaction([
-      // 1. Mark the donor's response as DONATED
       prisma.donorResponse.update({
-        where:  { requestId_donorId: { requestId: request.id, donorId } },
-        data:   { status: 'DONATED', donatedConfirmedAt: now },
+        where: { requestId_donorId: { requestId: request.id, donorId } },
+        data:  { status: 'DONATED', donatedConfirmedAt: now },
       }),
-      // 2. Mark the request as FULFILLED
       prisma.bloodRequest.update({
         where: { id: request.id },
         data:  { status: 'FULFILLED' },
       }),
-      // 3. Lock donor for 120 days (WHO minimum wait between whole blood donations)
       prisma.user.update({
         where: { id: donorId },
         data: {
@@ -257,42 +247,27 @@ router.post('/:id/confirm', async (req, res, next) => {
       }),
     ]);
 
-    res.json({
-      message:        'Donation confirmed. Thank you!',
-      eligibleAgainAt,
-    });
+    res.json({ message: 'Donation confirmed. Thank you!', eligibleAgainAt });
   } catch (err) {
     next(err);
   }
 });
 
 // ─── Escalation helpers ───────────────────────────────────────────────────────
-// These interact with the Bull queue that will be set up in Step 7.
-// For now they're stubs that store/retrieve job IDs from Redis.
-// The actual job processing logic lives in workers/escalationWorker.js.
 
 async function scheduleEscalation(requestId) {
-  // Lazy-load Bull queue to avoid crashing if Redis is temporarily unavailable
   const Queue = require('bull');
   const escalationQueue = new Queue('escalation', {
     redis: process.env.REDIS_URL || 'redis://localhost:6379',
   });
 
-  const job1 = await escalationQueue.add(
-    { requestId, level: 1 },
-    { delay: 15 * 60 * 1000 }  // 15 minutes
-  );
-  const job2 = await escalationQueue.add(
-    { requestId, level: 2 },
-    { delay: 30 * 60 * 1000 }  // 30 minutes
-  );
+  const job1 = await escalationQueue.add({ requestId, level: 1 }, { delay: 15 * 60 * 1000 });
+  const job2 = await escalationQueue.add({ requestId, level: 2 }, { delay: 30 * 60 * 1000 });
 
-  // Store job IDs in Redis so we can cancel them if a donor accepts
   await redis.set(
     `escalation_jobs:${requestId}`,
     JSON.stringify([job1.id, job2.id]),
-    'EX',
-    3600  // auto-expire key after 1 hour
+    'EX', 3600
   );
 
   await escalationQueue.close();
