@@ -3,26 +3,23 @@
 // Generates AWS S3 presigned URLs for NID photo uploads.
 //
 // Why presigned URLs instead of uploading through the backend?
-//   If the mobile app sent the photo to our backend first, the backend would then
-//   upload it to S3. This wastes bandwidth — the file travels twice.
-//   With a presigned URL:
-//     1. Backend generates a special temporary URL (valid 10 minutes)
-//     2. Mobile app uploads DIRECTLY to S3 using that URL
-//     3. Backend never handles the file bytes — just the S3 key (file path)
+//   The mobile app uploads directly to S3 — the file never passes through
+//   our server. This saves bandwidth and keeps the backend fast.
 //
-// How to get AWS credentials:
-//   1. AWS Console → IAM → Create User → attach policy "AmazonS3FullAccess" (or scoped)
-//   2. Generate access key → put in .env (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-//   3. Create an S3 bucket in region ap-southeast-1 (Singapore, closest to Bangladesh)
-//   4. Set bucket name in .env (AWS_S3_BUCKET)
+//   Flow:
+//     1. Backend generates a presigned PUT URL (valid 10 minutes)
+//     2. Mobile uploads the photo directly to S3/MinIO using that URL
+//     3. Mobile sends just the S3 key (a short string) to the backend
+//     4. Backend stores the key in User.nidPhotoUrl
+//
+// In development: AWS_ENDPOINT points the SDK at MinIO (local S3 in Docker).
+// In production:  Remove AWS_ENDPOINT — the SDK routes to real AWS automatically.
 
-const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
-const { PutObjectCommand }           = require('@aws-sdk/client-s3');
-const { getSignedUrl }               = require('@aws-sdk/s3-request-presigner');
-const { randomUUID }                 = require('crypto');
+const { S3Client, GetObjectCommand, PutObjectCommand,
+        CreateBucketCommand, HeadBucketCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { randomUUID }   = require('crypto');
 
-// AWS_ENDPOINT is set in .env when using MinIO locally.
-// In production, leave it unset — the SDK routes to real AWS automatically.
 const s3Config = {
   region:      process.env.AWS_REGION || 'ap-southeast-1',
   credentials: {
@@ -32,23 +29,37 @@ const s3Config = {
 };
 
 if (process.env.AWS_ENDPOINT) {
-  s3Config.endpoint              = process.env.AWS_ENDPOINT;
-  s3Config.forcePathStyle        = true; // MinIO requires path-style URLs
+  s3Config.endpoint       = process.env.AWS_ENDPOINT;
+  s3Config.forcePathStyle = true; // MinIO requires path-style URLs (not virtual-hosted)
 }
 
-const s3 = new S3Client(s3Config);
-
+const s3     = new S3Client(s3Config);
 const BUCKET = process.env.AWS_S3_BUCKET;
+
+// Called once at server startup (from server.js).
+// Creates the bucket if it doesn't exist — safe to call repeatedly (no-op if exists).
+// In production (real AWS) the bucket is created manually; this mainly helps MinIO dev.
+async function ensureBucketExists() {
+  if (!BUCKET) return;
+  try {
+    await s3.send(new HeadBucketCommand({ Bucket: BUCKET }));
+    console.log(`[S3] Bucket "${BUCKET}" ready`);
+  } catch (err) {
+    if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+      await s3.send(new CreateBucketCommand({ Bucket: BUCKET }));
+      console.log(`[S3] Bucket "${BUCKET}" created`);
+    } else {
+      // Credentials missing or MinIO not yet reachable — log and continue.
+      // The bucket check will happen again on the next request.
+      console.warn(`[S3] Could not verify bucket: ${err.message}`);
+    }
+  }
+}
 
 // Generate a presigned PUT URL so the mobile app can upload directly to S3.
 // Returns: { uploadUrl, s3Key }
-//   uploadUrl — the mobile app sends an HTTP PUT request to this URL with the file
-//   s3Key     — the file's path in S3 (saved to User.nidPhotoUrl after upload)
 async function generateUploadUrl(userId) {
-  // Unique key per upload: nid-photos/<userId>/<uuid>.jpg
-  // Including userId in the path makes it easy to find a user's NID photo later.
-  const s3Key = `nid-photos/${userId}/${randomUUID()}.jpg`;
-
+  const s3Key  = `nid-photos/${userId}/${randomUUID()}.jpg`;
   const command = new PutObjectCommand({
     Bucket:      BUCKET,
     Key:         s3Key,
@@ -57,16 +68,14 @@ async function generateUploadUrl(userId) {
 
   // URL expires in 10 minutes — enough time for the mobile app to upload
   const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 600 });
-
   return { uploadUrl, s3Key };
 }
 
 // Generate a presigned GET URL so admins can view the NID photo.
-// Not exposed as a public API — only used internally by the admin route.
+// Used internally by the admin route only — not exposed as a public endpoint.
 async function generateViewUrl(s3Key) {
   const command = new GetObjectCommand({ Bucket: BUCKET, Key: s3Key });
-  // View URL expires in 15 minutes
-  return getSignedUrl(s3, command, { expiresIn: 900 });
+  return getSignedUrl(s3, command, { expiresIn: 900 }); // 15 minutes
 }
 
-module.exports = { generateUploadUrl, generateViewUrl };
+module.exports = { ensureBucketExists, generateUploadUrl, generateViewUrl };

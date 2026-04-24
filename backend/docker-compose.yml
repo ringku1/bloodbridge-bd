@@ -2,17 +2,15 @@
 #
 # Spins up four services:
 #   1. postgres  — PostgreSQL 15 with PostGIS (for ST_DWithin radius queries)
-#   2. redis     — In-memory store + AOF persistence (OTP cache + Bull job queues)
-#   3. minio     — S3-compatible local storage for NID photos (dev/test only)
-#   4. backend   — Express API
+#   2. redis     — Redis with AOF persistence (OTP cache + Bull job queues)
+#   3. minio     — Local S3-compatible storage for NID photos (dev only)
+#   4. backend   — Express API (auto-migrates DB and creates S3 bucket on start)
 #
 # Usage:
 #   docker-compose up -d                    → start everything
 #   docker-compose up -d postgres redis     → DB + Redis only (for local dev)
 #   docker-compose down                     → stop all services
-#   docker-compose down -v                  → stop and DELETE volumes (data loss!)
-
-version: '3.8'
+#   docker-compose down -v                  → stop and DELETE all volumes (data loss!)
 
 services:
 
@@ -37,7 +35,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    # AOF (Append-Only File) persistence: every write is fsynced to disk.
+    # AOF persistence: every write is fsynced to disk.
     # Survives container restarts — escalation Bull jobs are not lost.
     command: redis-server --appendonly yes --appendfilename aof.aof
     ports:
@@ -53,11 +51,12 @@ services:
   minio:
     image: minio/minio:latest
     restart: unless-stopped
-    # MinIO speaks the S3 API — your AWS SDK code works with zero changes.
-    # Console UI is at http://localhost:9001 (login: minioadmin / minioadmin)
+    # MinIO speaks the S3 API — the AWS SDK works with zero code changes.
+    # Console UI: http://localhost:9001 (login: minioadmin / minioadmin)
+    # The backend creates the bucket automatically on startup via ensureBucketExists().
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"   # S3 API (same port your AWS SDK points to)
+      - "9000:9000"   # S3 API
       - "9001:9001"   # MinIO web console
     environment:
       MINIO_ROOT_USER:     minioadmin
@@ -69,19 +68,6 @@ services:
       interval: 5s
       timeout:  5s
       retries:  5
-
-  # Creates the bucket on first start so the backend can upload immediately
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      sh -c "
-        mc alias set local http://minio:9000 minioadmin minioadmin &&
-        mc mb --ignore-existing local/blood-bridge-nid-photos &&
-        mc anonymous set download local/blood-bridge-nid-photos
-      "
 
   backend:
     build:
@@ -99,8 +85,8 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    # Run migrations automatically on container start, then launch the server.
-    # `prisma migrate deploy` is safe to run repeatedly — it's a no-op if already up to date.
+    # Runs DB migrations first, then starts the server.
+    # ensureBucketExists() in server.js handles the MinIO bucket creation.
     command: >
       sh -c "npx prisma migrate deploy && npm start"
 

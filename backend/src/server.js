@@ -11,8 +11,9 @@
 const app    = require('./app');
 const prisma = require('./config/prisma');
 const redis  = require('./config/redis');
-const { startEligibilityWorker } = require('./workers/eligibilityWorker');
+const { startEligibilityWorker }  = require('./workers/eligibilityWorker');
 const { startEscalationWorker, escalationQueue } = require('./workers/escalationWorker');
+const { ensureBucketExists }      = require('./services/s3Service');
 
 const PORT = process.env.PORT || 3000;
 
@@ -52,6 +53,8 @@ async function startServer() {
 
     await prisma.$connect();
     console.log('[DB] PostgreSQL connected');
+
+    await ensureBucketExists();
 
     startEligibilityWorker();
     startEscalationWorker();
