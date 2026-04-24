@@ -17,6 +17,8 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
 COPY package*.json ./
 # npm ci is faster and stricter than npm install — uses exact lockfile versions
 RUN npm ci
@@ -28,6 +30,8 @@ RUN npx prisma generate
 FROM node:20-slim
 
 WORKDIR /app
+
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
 
