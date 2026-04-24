@@ -47,8 +47,8 @@ export default function CaregiversScreen() {
 
   async function handleAdd() {
     if (!name.trim()) return Alert.alert('Required', 'Enter the caregiver\'s name.');
-    if (!/^\+880[1-9]\d{8}$/.test(phone)) {
-      return Alert.alert('Invalid phone', 'Enter a valid Bangladeshi number: +880XXXXXXXXXX');
+    if (!/^\+880[1-9]\d{9}$/.test(phone)) {
+      return Alert.alert('Invalid phone', 'Enter a valid Bangladeshi number: +8801XXXXXXXXX');
     }
 
     setSaving(true);
