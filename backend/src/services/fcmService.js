@@ -18,12 +18,16 @@
 
 const admin = require('firebase-admin');
 
-// Check if real Firebase credentials are provided.
-// The placeholder value in .env.example contains "your_key_here" — detect that.
+// A real private key starts with "-----BEGIN PRIVATE KEY-----" and contains
+// actual base64 data, not placeholder text. We check for the BEGIN marker AND
+// that the key doesn't contain any obvious placeholder words.
+const privateKey = process.env.FIREBASE_PRIVATE_KEY || '';
 const hasFirebaseCreds =
   process.env.FIREBASE_PROJECT_ID &&
-  process.env.FIREBASE_PRIVATE_KEY &&
-  !process.env.FIREBASE_PRIVATE_KEY.includes('your_key_here');
+  process.env.FIREBASE_CLIENT_EMAIL &&
+  privateKey.includes('-----BEGIN PRIVATE KEY-----') &&
+  !privateKey.includes('your_') &&
+  !privateKey.includes('_here');
 
 // Only initialize Firebase if real credentials are present.
 // In development (USE_MOCK_FCM or missing creds), we skip init and log instead.
