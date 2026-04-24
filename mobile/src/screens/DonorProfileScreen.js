@@ -136,6 +136,16 @@ export default function DonorProfileScreen({ navigation }) {
         }
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={styles.caregiversButton}
+        onPress={() => navigation.navigate('Caregivers')}
+      >
+        <Text style={styles.caregiversButtonText}>👥  Manage Emergency Caregivers</Text>
+        <Text style={styles.caregiversButtonSub}>
+          Notified by SMS if no donor responds in 30 min
+        </Text>
+      </TouchableOpacity>
+
     </ScrollView>
   );
 }
@@ -183,4 +193,14 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   saveButtonText: { color: COLORS.white, fontSize: 16, fontWeight: '700' },
+
+  caregiversButton: {
+    borderWidth:   1,
+    borderColor:   COLORS.border,
+    borderRadius:  12,
+    padding:       16,
+    marginTop:     12,
+  },
+  caregiversButtonText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+  caregiversButtonSub:  { fontSize: 12, color: COLORS.textMuted, marginTop: 3 },
 });

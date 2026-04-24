@@ -5,21 +5,16 @@
 // Navigation structure:
 //
 //   Not logged in:
-//     AuthScreen  (phone + OTP login)
+//     AuthScreen
 //
-//   Logged in (Root stack — allows DonorRequest to slide over the tab bar):
+//   Logged in (Root stack):
 //     ├── MainTabs (bottom tab navigator)
-//     │     ├── Home tab      → HomeScreen
-//     │     ├── Request tab   → Stack: RequestBloodScreen → ActiveRequestScreen
-//     │     └── Profile tab   → Stack: DonorProfileScreen → VerificationScreen
-//     └── DonorRequest        → DonorRequestScreen (reached via push notification tap)
-//
-// Why a root stack above the tabs?
-//   Push notifications can arrive at any time. The DonorRequestScreen must be
-//   reachable even when the donor is on the Home tab. Putting it in the root
-//   stack lets navigate('DonorRequest', { requestId }) work from anywhere.
+//     │     ├── Home     → HomeScreen
+//     │     ├── Request  → RequestBloodScreen → ActiveRequestScreen
+//     │     ├── Donate   → DonorAcceptedScreen  (donor tracks accepted requests + call)
+//     │     └── Profile  → DonorProfileScreen → VerificationScreen → CaregiversScreen
+//     └── DonorRequest   → DonorRequestScreen  (reached via push notification tap)
 
-import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -27,10 +22,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text } from 'react-native';
 
-import { useAuthStore } from './src/store/authStore';
+import { useAuthStore }       from './src/store/authStore';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
-import { navigationRef } from './src/navigation/RootNavigation';
-import { COLORS } from './src/config';
+import { navigationRef }      from './src/navigation/RootNavigation';
+import { COLORS }             from './src/config';
 
 import AuthScreen           from './src/screens/AuthScreen';
 import HomeScreen           from './src/screens/HomeScreen';
@@ -39,6 +34,8 @@ import RequestBloodScreen   from './src/screens/RequestBloodScreen';
 import ActiveRequestScreen  from './src/screens/ActiveRequestScreen';
 import VerificationScreen   from './src/screens/VerificationScreen';
 import DonorRequestScreen   from './src/screens/DonorRequestScreen';
+import DonorAcceptedScreen  from './src/screens/DonorAcceptedScreen';
+import CaregiversScreen     from './src/screens/CaregiversScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -49,6 +46,7 @@ function ProfileStack() {
     <Stack.Navigator screenOptions={stackOptions}>
       <Stack.Screen name="DonorProfile"  component={DonorProfileScreen}  options={{ title: 'My Profile' }} />
       <Stack.Screen name="Verification"  component={VerificationScreen}   options={{ title: 'Verify Identity' }} />
+      <Stack.Screen name="Caregivers"    component={CaregiversScreen}     options={{ title: 'Emergency Caregivers' }} />
     </Stack.Navigator>
   );
 }
@@ -57,8 +55,8 @@ function ProfileStack() {
 function RequestStack() {
   return (
     <Stack.Navigator screenOptions={stackOptions}>
-      <Stack.Screen name="RequestBlood"   component={RequestBloodScreen}   options={{ title: 'Request Blood' }} />
-      <Stack.Screen name="ActiveRequest"  component={ActiveRequestScreen}  options={{ title: 'My Requests' }} />
+      <Stack.Screen name="RequestBlood"  component={RequestBloodScreen}  options={{ title: 'Request Blood' }} />
+      <Stack.Screen name="ActiveRequest" component={ActiveRequestScreen} options={{ title: 'My Requests' }} />
     </Stack.Navigator>
   );
 }
@@ -68,18 +66,23 @@ function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerShown:     false,
+        headerShown:             false,
         tabBarActiveTintColor:   COLORS.primary,
         tabBarInactiveTintColor: COLORS.textMuted,
-        tabBarStyle:     { borderTopColor: COLORS.border },
-        tabBarIcon: ({ color }) => {
-          const icons = { Home: '🏠', Request: '🩸', Profile: '👤' };
+        tabBarStyle:             { borderTopColor: COLORS.border },
+        tabBarIcon: () => {
+          const icons = { Home: '🏠', Request: '🩸', Donate: '💉', Profile: '👤' };
           return <Text style={{ fontSize: 20 }}>{icons[route.name]}</Text>;
         },
       })}
     >
-      <Tab.Screen name="Home"    component={HomeScreen}   options={{ headerShown: true, title: 'Blood Bridge', headerStyle: { backgroundColor: COLORS.primary }, headerTintColor: COLORS.white }} />
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{ headerShown: true, title: 'Blood Bridge', headerStyle: { backgroundColor: COLORS.primary }, headerTintColor: COLORS.white }}
+      />
       <Tab.Screen name="Request" component={RequestStack} />
+      <Tab.Screen name="Donate"  component={DonorAcceptedScreen} options={{ headerShown: true, title: 'My Donations' }} />
       <Tab.Screen name="Profile" component={ProfileStack} />
     </Tab.Navigator>
   );

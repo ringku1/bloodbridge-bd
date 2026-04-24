@@ -13,11 +13,12 @@ const cors         = require('cors');
 const helmet       = require('helmet');
 const morgan       = require('morgan');
 const rateLimit    = require('express-rate-limit');
-const authRoutes    = require('./routes/auth');
-const donorRoutes   = require('./routes/donors');
-const requestRoutes = require('./routes/requests');
-const verifyRoutes  = require('./routes/verify');
-const callRoutes    = require('./routes/call');
+const authRoutes       = require('./routes/auth');
+const donorRoutes      = require('./routes/donors');
+const requestRoutes    = require('./routes/requests');
+const verifyRoutes     = require('./routes/verify');
+const callRoutes       = require('./routes/call');
+const caregiverRoutes  = require('./routes/caregivers');
 const errorHandler  = require('./middleware/errorHandler');
 const prisma        = require('./config/prisma');
 const redis         = require('./config/redis');
@@ -109,11 +110,12 @@ app.get('/health/ready', async (_req, res) => {
 });
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-app.use('/api/auth',     authRoutes);
-app.use('/api/donors',   donorRoutes);
-app.use('/api/requests', requestRoutes);
-app.use('/api/verify',   verifyRoutes);
-app.use('/api/call',     callRoutes);
+app.use('/api/auth',       authRoutes);
+app.use('/api/donors',     donorRoutes);
+app.use('/api/requests',   requestRoutes);
+app.use('/api/verify',     verifyRoutes);
+app.use('/api/call',       callRoutes);
+app.use('/api/caregivers', caregiverRoutes);
 
 // ─── Error handler ────────────────────────────────────────────────────────────
 // MUST be last — Express only calls this when next(err) is invoked

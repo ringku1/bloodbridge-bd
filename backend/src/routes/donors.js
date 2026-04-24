@@ -191,4 +191,30 @@ router.get('/eligibility', async (req, res, next) => {
   }
 });
 
+// ─── GET /api/donors/my-responses ────────────────────────────────────────────
+// Returns all requests this donor has accepted or donated to.
+// Used by the mobile "My Donations" tab.
+router.get('/my-responses', async (req, res, next) => {
+  try {
+    const responses = await prisma.donorResponse.findMany({
+      where: {
+        donorId: req.user.id,
+        status:  { in: ['ACCEPTED', 'DONATED'] },
+      },
+      include: {
+        request: {
+          include: {
+            requester: { select: { id: true, name: true, district: true } },
+          },
+        },
+      },
+      orderBy: { respondedAt: 'desc' },
+    });
+
+    res.json({ responses });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

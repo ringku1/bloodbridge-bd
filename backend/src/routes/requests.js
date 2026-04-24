@@ -119,7 +119,7 @@ router.get('/active', async (req, res, next) => {
     const requests = await prisma.bloodRequest.findMany({
       where: {
         requesterId: req.user.id,
-        status: 'OPEN',
+        status: { in: ['OPEN', 'MATCHED'] },
       },
       include: {
         responses: {

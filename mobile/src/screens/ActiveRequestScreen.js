@@ -22,12 +22,26 @@ import { formatBloodGroup, formatRequestStatus, timeAgo } from '../utils/formatt
 
 export default function ActiveRequestScreen() {
   const { activeRequests, fetchActiveRequests, loading } = useRequestStore();
-  const [confirmingId, setConfirmingId] = useState(null); // donorId being confirmed
-  const [callingId, setCallingId]       = useState(null); // requestId being called
+  const [confirmingId, setConfirmingId] = useState(null);
+  const [callingId, setCallingId]       = useState(null);
+  const [endingId, setEndingId]         = useState(null);
+  // activeSessions: { [responseId]: sessionId } — populated after a call is initiated
+  const [activeSessions, setActiveSessions] = useState({});
 
   useEffect(() => {
     fetchActiveRequests();
   }, []);
+
+  // Seed activeSessions from DB whenever the list refreshes
+  useEffect(() => {
+    const sessions = {};
+    for (const req of activeRequests) {
+      for (const r of req.responses ?? []) {
+        if (r.proxySessionId) sessions[r.id] = r.proxySessionId;
+      }
+    }
+    setActiveSessions(sessions);
+  }, [activeRequests]);
 
   const onRefresh = useCallback(() => fetchActiveRequests(), []);
 
@@ -57,10 +71,11 @@ export default function ActiveRequestScreen() {
     );
   }
 
-  async function handleCall(requestId) {
+  async function handleCall(requestId, responseId) {
     setCallingId(requestId);
     try {
       const res = await api.post('/call/initiate', { requestId });
+      setActiveSessions((prev) => ({ ...prev, [responseId]: res.data.sessionId }));
       Alert.alert(
         '📞 Call via proxy number',
         `Call this number to reach the donor:\n\n${res.data.donorProxyNumber}\n\nNeither of you will see each other's real number.`,
@@ -70,6 +85,23 @@ export default function ActiveRequestScreen() {
       Alert.alert('Error', err.response?.data?.error || 'Could not initiate call.');
     } finally {
       setCallingId(null);
+    }
+  }
+
+  async function handleEndCall(responseId, sessionId) {
+    setEndingId(responseId);
+    try {
+      await api.delete(`/call/${sessionId}`);
+      setActiveSessions((prev) => {
+        const next = { ...prev };
+        delete next[responseId];
+        return next;
+      });
+      fetchActiveRequests();
+    } catch (err) {
+      Alert.alert('Error', err.response?.data?.error || 'Could not end call session.');
+    } finally {
+      setEndingId(null);
     }
   }
 
@@ -107,38 +139,55 @@ export default function ActiveRequestScreen() {
         {acceptedDonors.length === 0 ? (
           <Text style={styles.waitingText}>⏳ Waiting for a donor to accept…</Text>
         ) : (
-          acceptedDonors.map((response) => (
-            <View key={response.id} style={styles.donorRow}>
-              <View>
-                <Text style={styles.donorName}>{response.donor?.name || 'Donor'}</Text>
-                <Text style={styles.donorVerified}>
-                  {response.donor?.verifiedStatus === 'VERIFIED' ? '✅ Verified' : '⚠️ Unverified'}
-                </Text>
+          acceptedDonors.map((response) => {
+            const sessionId     = activeSessions[response.id];
+            const sessionActive = !!sessionId;
+            return (
+              <View key={response.id} style={styles.donorRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.donorName}>{response.donor?.name || 'Donor'}</Text>
+                  <Text style={styles.donorVerified}>
+                    {response.donor?.verifiedStatus === 'VERIFIED' ? '✅ Verified' : '⚠️ Unverified'}
+                  </Text>
+                </View>
+                <View style={styles.donorActions}>
+                  {sessionActive ? (
+                    <TouchableOpacity
+                      style={styles.endCallBtn}
+                      onPress={() => handleEndCall(response.id, sessionId)}
+                      disabled={endingId === response.id}
+                    >
+                      {endingId === response.id
+                        ? <ActivityIndicator size="small" color="#EF4444" />
+                        : <Text style={styles.endCallBtnText}>⏹ End</Text>
+                      }
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.callBtn}
+                      onPress={() => handleCall(req.id, response.id)}
+                      disabled={callingId === req.id}
+                    >
+                      {callingId === req.id
+                        ? <ActivityIndicator size="small" color={COLORS.primary} />
+                        : <Text style={styles.callBtnText}>📞 Call</Text>
+                      }
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={styles.confirmBtn}
+                    onPress={() => handleConfirmDonation(req.id, response.donorId)}
+                    disabled={confirmingId === response.donorId}
+                  >
+                    {confirmingId === response.donorId
+                      ? <ActivityIndicator size="small" color={COLORS.white} />
+                      : <Text style={styles.confirmBtnText}>✓ Confirm</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={styles.donorActions}>
-                <TouchableOpacity
-                  style={styles.callBtn}
-                  onPress={() => handleCall(req.id)}
-                  disabled={callingId === req.id}
-                >
-                  {callingId === req.id
-                    ? <ActivityIndicator size="small" color={COLORS.primary} />
-                    : <Text style={styles.callBtnText}>📞 Call</Text>
-                  }
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.confirmBtn}
-                  onPress={() => handleConfirmDonation(req.id, response.donorId)}
-                  disabled={confirmingId === response.donorId}
-                >
-                  {confirmingId === response.donorId
-                    ? <ActivityIndicator size="small" color={COLORS.white} />
-                    : <Text style={styles.confirmBtnText}>✓ Confirm</Text>
-                  }
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
+            );
+          })
         )}
       </View>
     );
@@ -218,6 +267,14 @@ const styles = StyleSheet.create({
     paddingVertical:   8,
   },
   callBtnText:   { color: COLORS.primary, fontWeight: '600', fontSize: 13 },
+  endCallBtn: {
+    borderWidth:  1,
+    borderColor:  '#EF4444',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical:   8,
+  },
+  endCallBtnText: { color: '#EF4444', fontWeight: '600', fontSize: 13 },
   confirmBtn: {
     backgroundColor: COLORS.success,
     borderRadius:    8,
