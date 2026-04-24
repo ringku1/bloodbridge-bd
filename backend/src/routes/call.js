@@ -100,23 +100,33 @@ router.post('/initiate', async (req, res, next) => {
 
 // ─── DELETE /api/call/:sessionId ─────────────────────────────────────────────
 // Ends a Twilio Proxy session.
-// Called when the donation is confirmed or the request expires.
+// Only the donor or the requester of the linked blood request can end it.
 router.delete('/:sessionId', async (req, res, next) => {
   try {
     const { sessionId } = req.params;
 
-    // Verify the user is a participant in the session
     const response = await prisma.donorResponse.findFirst({
-      where: { proxySessionId: sessionId },
+      where:   { proxySessionId: sessionId },
+      include: {
+        request: { select: { requesterId: true } },
+      },
     });
 
     if (!response) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
+    // Only the donor or the original requester can end the session
+    const isParticipant =
+      req.user.id === response.donorId ||
+      req.user.id === response.request.requesterId;
+
+    if (!isParticipant) {
+      return res.status(403).json({ error: 'You are not a participant in this call session' });
+    }
+
     await twilioService.endProxySession(sessionId);
 
-    // Clear the session ID from DonorResponse
     await prisma.donorResponse.update({
       where: { id: response.id },
       data:  { proxySessionId: null },
