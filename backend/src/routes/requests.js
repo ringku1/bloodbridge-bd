@@ -24,6 +24,7 @@ const authMiddleware = require('../middleware/auth');
 const fcmService     = require('../services/fcmService');
 const geoService     = require('../services/geoService');
 const redis          = require('../config/redis');
+const { escalationQueue } = require('../workers/escalationWorker');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -225,6 +226,15 @@ router.post('/:id/confirm', async (req, res, next) => {
       return res.status(403).json({ error: 'Only the requester can confirm this donation' });
     }
 
+    // Verify the donor actually accepted this specific request
+    const donorResponse = await prisma.donorResponse.findUnique({
+      where: { requestId_donorId: { requestId: request.id, donorId } },
+    });
+
+    if (!donorResponse || donorResponse.status !== 'ACCEPTED') {
+      return res.status(400).json({ error: 'This donor has not accepted your request' });
+    }
+
     const now             = new Date();
     const eligibleAgainAt = new Date(now.getTime() + 120 * 24 * 60 * 60 * 1000);
 
@@ -256,11 +266,6 @@ router.post('/:id/confirm', async (req, res, next) => {
 // ─── Escalation helpers ───────────────────────────────────────────────────────
 
 async function scheduleEscalation(requestId) {
-  const Queue = require('bull');
-  const escalationQueue = new Queue('escalation', {
-    redis: process.env.REDIS_URL || 'redis://localhost:6379',
-  });
-
   const job1 = await escalationQueue.add({ requestId, level: 1 }, { delay: 15 * 60 * 1000 });
   const job2 = await escalationQueue.add({ requestId, level: 2 }, { delay: 30 * 60 * 1000 });
 
@@ -269,8 +274,6 @@ async function scheduleEscalation(requestId) {
     JSON.stringify([job1.id, job2.id]),
     'EX', 3600
   );
-
-  await escalationQueue.close();
 }
 
 async function cancelEscalation(requestId) {
@@ -278,10 +281,6 @@ async function cancelEscalation(requestId) {
   if (!raw) return;
 
   const jobIds = JSON.parse(raw);
-  const Queue  = require('bull');
-  const escalationQueue = new Queue('escalation', {
-    redis: process.env.REDIS_URL || 'redis://localhost:6379',
-  });
 
   for (const id of jobIds) {
     const job = await escalationQueue.getJob(id);
@@ -289,7 +288,6 @@ async function cancelEscalation(requestId) {
   }
 
   await redis.del(`escalation_jobs:${requestId}`);
-  await escalationQueue.close();
 }
 
 module.exports = router;
