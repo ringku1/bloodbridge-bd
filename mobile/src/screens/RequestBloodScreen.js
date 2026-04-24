@@ -50,7 +50,7 @@ export default function RequestBloodScreen({ navigation }) {
   async function handleSubmit() {
     if (!bloodGroup)          return Alert.alert('Required', 'Select the blood group needed.');
     if (!hospitalName.trim()) return Alert.alert('Required', 'Enter the hospital name.');
-    if (!latitude)            return Alert.alert('Required', 'Set the location first.');
+    if (!latitude || !longitude) return Alert.alert('Required', 'Set the location first.');
 
     try {
       const result = await createRequest({

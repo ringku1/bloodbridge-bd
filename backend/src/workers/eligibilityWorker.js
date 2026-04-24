@@ -71,6 +71,25 @@ function startEligibilityWorker() {
   });
 
   console.log('[EligibilityWorker] Scheduled — runs daily at 06:00 AM BST (00:00 UTC)');
+
+  // Expire stale OPEN requests every 15 minutes.
+  // expiresAt is set to now+6h when a request is created; this job closes them out.
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      const result = await prisma.bloodRequest.updateMany({
+        where: {
+          status:    'OPEN',
+          expiresAt: { lte: new Date() },
+        },
+        data: { status: 'EXPIRED' },
+      });
+      if (result.count > 0) {
+        console.log(`[EligibilityWorker] Expired ${result.count} stale blood request(s)`);
+      }
+    } catch (err) {
+      console.error('[EligibilityWorker] Error expiring requests:', err.message);
+    }
+  });
 }
 
 module.exports = { startEligibilityWorker };
