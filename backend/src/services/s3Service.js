@@ -21,13 +21,22 @@ const { PutObjectCommand }           = require('@aws-sdk/client-s3');
 const { getSignedUrl }               = require('@aws-sdk/s3-request-presigner');
 const { randomUUID }                 = require('crypto');
 
-const s3 = new S3Client({
+// AWS_ENDPOINT is set in .env when using MinIO locally.
+// In production, leave it unset — the SDK routes to real AWS automatically.
+const s3Config = {
   region:      process.env.AWS_REGION || 'ap-southeast-1',
   credentials: {
     accessKeyId:     process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
-});
+};
+
+if (process.env.AWS_ENDPOINT) {
+  s3Config.endpoint              = process.env.AWS_ENDPOINT;
+  s3Config.forcePathStyle        = true; // MinIO requires path-style URLs
+}
+
+const s3 = new S3Client(s3Config);
 
 const BUCKET = process.env.AWS_S3_BUCKET;
 

@@ -1,9 +1,10 @@
 # docker-compose.yml
 #
-# Spins up three services:
+# Spins up four services:
 #   1. postgres  — PostgreSQL 15 with PostGIS (for ST_DWithin radius queries)
 #   2. redis     — In-memory store + AOF persistence (OTP cache + Bull job queues)
-#   3. backend   — Express API (production image, no volume bind-mount)
+#   3. minio     — S3-compatible local storage for NID photos (dev/test only)
+#   4. backend   — Express API
 #
 # Usage:
 #   docker-compose up -d                    → start everything
@@ -49,6 +50,39 @@ services:
       timeout:  5s
       retries:  5
 
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    # MinIO speaks the S3 API — your AWS SDK code works with zero changes.
+    # Console UI is at http://localhost:9001 (login: minioadmin / minioadmin)
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API (same port your AWS SDK points to)
+      - "9001:9001"   # MinIO web console
+    environment:
+      MINIO_ROOT_USER:     minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test:     ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout:  5s
+      retries:  5
+
+  # Creates the bucket on first start so the backend can upload immediately
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/blood-bridge-nid-photos &&
+        mc anonymous set download local/blood-bridge-nid-photos
+      "
+
   backend:
     build:
       context:    .
@@ -61,6 +95,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     env_file:
       - .env
     # Run migrations automatically on container start, then launch the server.
@@ -71,3 +107,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  miniodata:
