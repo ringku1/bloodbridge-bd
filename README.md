@@ -67,7 +67,7 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 | Auth | OTP via SSL Wireless (Bangladesh) + JWT |
 | Push notifications | Firebase Cloud Messaging (FCM) via firebase-admin |
 | Masked calls | Twilio Proxy API |
-| File storage | AWS S3 (presigned URLs — direct upload from mobile) |
+| File storage | AWS S3 in production; MinIO (local S3-compatible) in dev |
 | ORM | Prisma |
 | Infrastructure | Docker + docker-compose |
 | CI/CD | GitHub Actions |
@@ -514,14 +514,31 @@ Opens a visual table browser at **http://localhost:5555**.
 | `TWILIO_ACCOUNT_SID` | Prod | — | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | Prod | — | Twilio auth token |
 | `TWILIO_PROXY_SERVICE_SID` | Prod | — | Twilio Proxy service SID |
-| `AWS_ACCESS_KEY_ID` | Prod | — | AWS IAM access key |
-| `AWS_SECRET_ACCESS_KEY` | Prod | — | AWS IAM secret key |
-| `AWS_REGION` | Prod | `ap-southeast-1` | S3 bucket region |
-| `AWS_S3_BUCKET` | Prod | — | S3 bucket name for NID photos |
+| `AWS_ACCESS_KEY_ID` | ✅ | `minioadmin` (dev) | AWS IAM key — use `minioadmin` for local MinIO |
+| `AWS_SECRET_ACCESS_KEY` | ✅ | `minioadmin` (dev) | AWS IAM secret — use `minioadmin` for local MinIO |
+| `AWS_REGION` | ✅ | `us-east-1` (dev) | `us-east-1` for MinIO; `ap-southeast-1` for real AWS |
+| `AWS_S3_BUCKET` | ✅ | `blood-bridge-nid-photos` | Bucket name (auto-created in MinIO on first start) |
+| `AWS_ENDPOINT` | Dev only | `http://minio:9000` | Points the S3 SDK at MinIO. Remove this line in production |
 | `PORT` | — | `3000` | Server port |
 | `NODE_ENV` | — | `development` | `development` or `production` |
 
 > **Production startup validation:** The server refuses to start if `DATABASE_URL`, `REDIS_URL`, or `JWT_SECRET` are missing. In `NODE_ENV=production`, it also rejects placeholder values and enforces `ADMIN_SECRET` ≥ 32 characters.
+
+---
+
+## Local testing coverage
+
+All features work locally with zero real external accounts:
+
+| Feature | Local behaviour |
+|---|---|
+| OTP auth | `USE_MOCK_SMS=true` — OTP prints to Docker logs |
+| Push notifications | No Firebase creds → notifications print to Docker logs |
+| NID photo upload | MinIO running in Docker — view uploaded files at `http://localhost:9001` (login: `minioadmin` / `minioadmin`) |
+| Masked calling | No Twilio creds → returns fake proxy numbers, logs to Docker |
+| PostGIS search | Runs fully in the postgres Docker container |
+| Eligibility cron | Runs inside the backend container at 06:00 UTC daily |
+| Escalation queue | Redis + Bull running in Docker — jobs fire after 15/30 min |
 
 ---
 
