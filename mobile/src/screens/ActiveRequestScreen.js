@@ -63,7 +63,7 @@ export default function ActiveRequestScreen() {
       const res = await api.post('/call/initiate', { requestId });
       Alert.alert(
         '📞 Call via proxy number',
-        `Call this number to reach the donor:\n\n${res.data.requesterProxyNumber}\n\nNeither of you will see each other's real number.`,
+        `Call this number to reach the donor:\n\n${res.data.donorProxyNumber}\n\nNeither of you will see each other's real number.`,
         [{ text: 'Got it' }]
       );
     } catch (err) {
