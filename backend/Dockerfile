@@ -11,7 +11,9 @@
 #   Rebuilding only re-runs npm ci when package.json actually changes.
 
 # ─── Stage 1: builder ────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+# node:20-slim is Debian-based (not Alpine) — it has OpenSSL pre-installed.
+# Alpine (musl libc) causes Prisma's binary engine to fail at runtime.
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -23,7 +25,7 @@ COPY prisma ./prisma
 RUN npx prisma generate
 
 # ─── Stage 2: runtime ─────────────────────────────────────────────────────────
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
