@@ -67,7 +67,15 @@ async function generateUploadUrl(userId) {
   });
 
   // URL expires in 10 minutes — enough time for the mobile app to upload
-  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 600 });
+  let uploadUrl = await getSignedUrl(s3, command, { expiresIn: 600 });
+
+  // The SDK generates URLs using AWS_ENDPOINT (e.g. http://minio:9000 inside Docker).
+  // Mobile devices on the LAN can't resolve that internal hostname, so we swap it out
+  // for MINIO_PUBLIC_URL (the LAN-accessible address, e.g. http://192.168.0.110:9000).
+  if (process.env.MINIO_PUBLIC_URL && process.env.AWS_ENDPOINT) {
+    uploadUrl = uploadUrl.replace(process.env.AWS_ENDPOINT, process.env.MINIO_PUBLIC_URL);
+  }
+
   return { uploadUrl, s3Key };
 }
 
