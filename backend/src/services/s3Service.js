@@ -20,7 +20,7 @@ const { S3Client, GetObjectCommand, PutObjectCommand,
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { randomUUID }   = require('crypto');
 
-const s3Config = {
+const baseCredentials = {
   region:      process.env.AWS_REGION || 'ap-southeast-1',
   credentials: {
     accessKeyId:     process.env.AWS_ACCESS_KEY_ID,
@@ -28,12 +28,30 @@ const s3Config = {
   },
 };
 
+// Internal client — used for backend→MinIO operations (bucket creation, direct puts).
+// Uses Docker-internal endpoint (http://minio:9000).
+const s3Config = { ...baseCredentials };
 if (process.env.AWS_ENDPOINT) {
   s3Config.endpoint       = process.env.AWS_ENDPOINT;
-  s3Config.forcePathStyle = true; // MinIO requires path-style URLs (not virtual-hosted)
+  s3Config.forcePathStyle = true;
 }
+const s3 = new S3Client(s3Config);
 
-const s3     = new S3Client(s3Config);
+// Public client — used ONLY for generating presigned upload URLs returned to mobile.
+// Presigned URLs embed the host in the HMAC signature; if the URL's host doesn't match
+// the host the mobile device will connect to, MinIO rejects with SignatureDoesNotMatch.
+// Using MINIO_PUBLIC_URL here ensures the signature is computed with the LAN-accessible
+// host so the mobile PUT succeeds.
+const s3PublicConfig = { ...baseCredentials };
+if (process.env.MINIO_PUBLIC_URL) {
+  s3PublicConfig.endpoint       = process.env.MINIO_PUBLIC_URL;
+  s3PublicConfig.forcePathStyle = true;
+} else if (process.env.AWS_ENDPOINT) {
+  s3PublicConfig.endpoint       = process.env.AWS_ENDPOINT;
+  s3PublicConfig.forcePathStyle = true;
+}
+const s3Public = new S3Client(s3PublicConfig);
+
 const BUCKET = process.env.AWS_S3_BUCKET;
 
 // Called once at server startup (from server.js).
@@ -66,16 +84,10 @@ async function generateUploadUrl(userId) {
     ContentType: 'image/jpeg',
   });
 
-  // URL expires in 10 minutes — enough time for the mobile app to upload
-  let uploadUrl = await getSignedUrl(s3, command, { expiresIn: 600 });
-
-  // The SDK generates URLs using AWS_ENDPOINT (e.g. http://minio:9000 inside Docker).
-  // Mobile devices on the LAN can't resolve that internal hostname, so we swap it out
-  // for MINIO_PUBLIC_URL (the LAN-accessible address, e.g. http://192.168.0.110:9000).
-  if (process.env.MINIO_PUBLIC_URL && process.env.AWS_ENDPOINT) {
-    uploadUrl = uploadUrl.replace(process.env.AWS_ENDPOINT, process.env.MINIO_PUBLIC_URL);
-  }
-
+  // Use s3Public so the presigned URL is signed with the LAN-accessible host.
+  // MinIO re-derives the expected signature from the incoming Host header, so the
+  // client's Host must match the host used when signing — using s3Public ensures that.
+  const uploadUrl = await getSignedUrl(s3Public, command, { expiresIn: 600 });
   return { uploadUrl, s3Key };
 }
 
