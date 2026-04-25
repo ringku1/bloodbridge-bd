@@ -66,10 +66,9 @@ export default function VerificationScreen() {
   }
 
   async function handleUpload() {
-    // Step 1: ask user to pick an image
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality:    0.8,       // 80% quality reduces file size without hurting readability
+      quality:    0.8,
       allowsEditing: false,
     });
 
@@ -79,27 +78,23 @@ export default function VerificationScreen() {
     setUploading(true);
 
     try {
-      // Step 2: get a presigned upload URL from our backend
-      const urlRes = await api.get('/verify/upload-url');
-      const { uploadUrl, s3Key } = urlRes.data;
-
-      // Step 3: upload the image directly to S3
-      // We fetch the image as a blob and PUT it to the presigned URL.
-      // The presigned URL includes the auth signature — no extra headers needed.
-      const imageResponse = await fetch(asset.uri);
-      const blob           = await imageResponse.blob();
-
-      const s3Response = await fetch(uploadUrl, {
-        method:  'PUT',
-        body:    blob,
-        headers: { 'Content-Type': 'image/jpeg' },
+      // Build multipart form — React Native handles the file:// URI natively
+      // at the networking layer, which is far more reliable than fetch+blob+PUT.
+      const formData = new FormData();
+      formData.append('photo', {
+        uri:  asset.uri,
+        type: asset.mimeType || 'image/jpeg',
+        name: 'nid.jpg',
       });
 
-      if (!s3Response.ok) {
-        throw new Error('S3 upload failed');
-      }
+      // POST to our backend; backend uploads to MinIO over the internal Docker
+      // network, avoiding direct mobile→MinIO connectivity entirely.
+      const uploadRes = await api.post('/verify/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const { s3Key } = uploadRes.data;
 
-      // Step 4: tell the backend which S3 key was uploaded
+      // Tell the backend which key to store against this user's profile.
       await api.post('/verify/submit', { s3Key });
 
       setStatus('PENDING');
@@ -107,10 +102,10 @@ export default function VerificationScreen() {
 
       Alert.alert(
         'Submitted!',
-        'Your NID photo has been submitted for review. We will notify you once it\'s approved.'
+        "Your NID photo has been submitted for review. We'll notify you once it's approved."
       );
     } catch (err) {
-      Alert.alert('Upload failed', err.message || 'Please try again.');
+      Alert.alert('Upload failed', err.response?.data?.error || err.message || 'Please try again.');
     } finally {
       setUploading(false);
     }

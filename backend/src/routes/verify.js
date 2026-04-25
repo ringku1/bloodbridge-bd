@@ -18,10 +18,21 @@
 //     Protected by x-admin-secret header.
 
 const express        = require('express');
+const multer         = require('multer');
 const prisma         = require('../config/prisma');
 const s3Service      = require('../services/s3Service');
 const authMiddleware = require('../middleware/auth');
 const adminAuth      = require('../middleware/adminAuth');
+
+// Memory storage — file buffer lives in req.file.buffer; nothing written to disk.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: 10 * 1024 * 1024 }, // 10 MB max
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
+  },
+});
 
 const router = express.Router();
 
@@ -36,6 +47,27 @@ router.get('/upload-url', authMiddleware, async (req, res, next) => {
       s3Key,     // mobile app sends this back in /submit
       expiresIn: '10 minutes',
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/verify/upload ──────────────────────────────────────────────────
+// Receives the NID photo as multipart/form-data (field name: "photo") and
+// uploads it to S3/MinIO from the backend. Avoids direct mobile→MinIO
+// connectivity and React Native blob issues with presigned URLs.
+// Returns: { s3Key }
+router.post('/upload', authMiddleware, upload.single('photo'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image provided' });
+    }
+    const { s3Key } = await s3Service.uploadBuffer(
+      req.user.id,
+      req.file.buffer,
+      req.file.mimetype,
+    );
+    res.json({ s3Key });
   } catch (err) {
     next(err);
   }

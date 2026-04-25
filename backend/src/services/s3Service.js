@@ -91,6 +91,20 @@ async function generateUploadUrl(userId) {
   return { uploadUrl, s3Key };
 }
 
+// Upload a file buffer directly to S3 from the backend.
+// Used by POST /api/verify/upload — avoids direct mobile→MinIO connectivity.
+// Returns: { s3Key }
+async function uploadBuffer(userId, buffer, contentType) {
+  const s3Key = `nid-photos/${userId}/${randomUUID()}.jpg`;
+  await s3.send(new PutObjectCommand({
+    Bucket:      BUCKET,
+    Key:         s3Key,
+    Body:        buffer,
+    ContentType: contentType || 'image/jpeg',
+  }));
+  return { s3Key };
+}
+
 // Generate a presigned GET URL so admins can view the NID photo.
 // Used internally by the admin route only — not exposed as a public endpoint.
 async function generateViewUrl(s3Key) {
@@ -98,4 +112,4 @@ async function generateViewUrl(s3Key) {
   return getSignedUrl(s3, command, { expiresIn: 900 }); // 15 minutes
 }
 
-module.exports = { ensureBucketExists, generateUploadUrl, generateViewUrl };
+module.exports = { ensureBucketExists, generateUploadUrl, generateViewUrl, uploadBuffer };
