@@ -68,7 +68,7 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 | Database | PostgreSQL 15 + PostGIS (geospatial radius queries) |
 | Cache / Queue | Redis 7 + Bull (delayed job queues, AOF-persisted) |
 | Auth | OTP via SSL Wireless (Bangladesh) + JWT |
-| Push notifications | Firebase Cloud Messaging (FCM) via firebase-admin |
+| Push notifications | Expo Push Notification Service (via expo-server-sdk) |
 | Masked calls | Twilio Proxy API |
 | File storage | AWS S3 in production; MinIO (local S3-compatible) in dev |
 | ORM | Prisma |
@@ -628,7 +628,7 @@ All features work locally with zero real external accounts:
 | Feature | Local behaviour |
 |---|---|
 | OTP auth | `USE_MOCK_SMS=true` — OTP prints to Docker logs |
-| Push notifications | No Firebase creds → notifications print to Docker logs |
+| Push notifications | Non-Expo tokens → notifications print to Docker logs; real Expo tokens deliver live |
 | NID photo upload | MinIO running in Docker — view at `http://localhost:9001` (login: `minioadmin` / `minioadmin`) |
 | Masked calling | No Twilio creds → returns fake proxy numbers, logs to Docker |
 | PostGIS radius search | Runs fully in the postgres Docker container |
@@ -678,12 +678,15 @@ All features work locally with zero real external accounts:
 2. Get `API_KEY` and `SID` from the dashboard
 3. Set `USE_MOCK_SMS=false` in `.env`
 
-### Firebase (Push Notifications)
-1. Go to [console.firebase.google.com](https://console.firebase.google.com)
-2. Create a project → **Project Settings → Service Accounts**
-3. Click **Generate new private key** → download JSON
-4. Copy `project_id`, `private_key`, `client_email` to `.env`
-5. Add your app's `google-services.json` (Android) to `mobile/`
+### Expo Push (Push Notifications)
+No account or credentials needed — Expo Push is free and works out of the box.
+
+For production EAS builds (to get a stable `projectId`):
+```bash
+npm install -g eas-cli
+eas login
+eas init   # adds projectId to app.json automatically
+```
 
 ### Twilio Proxy (Masked Calls)
 1. Sign up at [twilio.com](https://twilio.com)
@@ -691,11 +694,18 @@ All features work locally with zero real external accounts:
 3. Add phone numbers to the proxy pool
 4. Copy Account SID, Auth Token, Proxy Service SID to `.env`
 
-### AWS S3 (NID Photo Storage)
+### Cloudflare R2 (NID Photo Storage — recommended)
+1. Sign up at [cloudflare.com](https://cloudflare.com) — free
+2. Go to **R2 → Create bucket** → name it `blood-bridge-nid-photos`
+3. Go to **R2 → Manage R2 API Tokens → Create API Token** (Object Read & Write)
+4. Copy Account ID, Access Key ID, Secret Access Key to `.env`
+5. Remove `MINIO_PUBLIC_URL` from `.env`; set `AWS_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com`
+
+### AWS S3 (NID Photo Storage — alternative)
 1. Go to [AWS Console → IAM](https://console.aws.amazon.com/iam)
 2. Create a user → attach **AmazonS3FullAccess** policy (or scope it to your bucket)
 3. Generate access keys → copy to `.env`
-4. Remove `AWS_ENDPOINT` from `.env` (that was MinIO-only)
+4. Remove `AWS_ENDPOINT` and `MINIO_PUBLIC_URL` from `.env`
 5. Create an S3 bucket in `ap-southeast-1`
 
 ---
