@@ -21,7 +21,7 @@ import BloodGroupPicker from '../components/BloodGroupPicker';
 import { COLORS } from '../config';
 
 export default function DonorProfileScreen({ navigation }) {
-  const { user, updateUser } = useAuthStore();
+  const { user, updateUser, logout } = useAuthStore();
 
   // Pre-fill with existing data so the user can edit in place
   const [name, setName]           = useState(user?.name || '');
@@ -146,6 +146,18 @@ export default function DonorProfileScreen({ navigation }) {
         </Text>
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={styles.logoutButton}
+        onPress={() =>
+          Alert.alert('Log out', 'Are you sure you want to log out?', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Log out', style: 'destructive', onPress: logout },
+          ])
+        }
+      >
+        <Text style={styles.logoutButtonText}>Log Out</Text>
+      </TouchableOpacity>
+
     </ScrollView>
   );
 }
@@ -203,4 +215,14 @@ const styles = StyleSheet.create({
   },
   caregiversButtonText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
   caregiversButtonSub:  { fontSize: 12, color: COLORS.textMuted, marginTop: 3 },
+
+  logoutButton: {
+    borderWidth:   1,
+    borderColor:   '#EF4444',
+    borderRadius:  12,
+    padding:       16,
+    marginTop:     12,
+    alignItems:    'center',
+  },
+  logoutButtonText: { fontSize: 15, fontWeight: '600', color: '#EF4444' },
 });
