@@ -19,6 +19,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
+import { API_BASE_URL } from '../config';
 import { COLORS } from '../config';
 
 // Status display config
@@ -89,10 +90,19 @@ export default function VerificationScreen() {
 
       // POST to our backend; backend uploads to MinIO over the internal Docker
       // network, avoiding direct mobile→MinIO connectivity entirely.
-      // Do NOT set Content-Type manually — axios must auto-generate it with
-      // the multipart boundary, otherwise the server can't parse the body.
-      const uploadRes = await api.post('/verify/upload', formData);
-      const { s3Key } = uploadRes.data;
+      // Use fetch (not axios) for multipart uploads — React Native's native
+      // fetch sets the correct Content-Type with boundary automatically.
+      const token = useAuthStore.getState().token;
+      const uploadRes = await fetch(`${API_BASE_URL}/verify/upload`, {
+        method:  'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body:    formData,
+      });
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json();
+        throw new Error(errData.error || 'Upload failed');
+      }
+      const { s3Key } = await uploadRes.json();
 
       // Tell the backend which key to store against this user's profile.
       await api.post('/verify/submit', { s3Key });
