@@ -89,9 +89,9 @@ export default function VerificationScreen() {
 
       // POST to our backend; backend uploads to MinIO over the internal Docker
       // network, avoiding direct mobile→MinIO connectivity entirely.
-      const uploadRes = await api.post('/verify/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      // Do NOT set Content-Type manually — axios must auto-generate it with
+      // the multipart boundary, otherwise the server can't parse the body.
+      const uploadRes = await api.post('/verify/upload', formData);
       const { s3Key } = uploadRes.data;
 
       // Tell the backend which key to store against this user's profile.
