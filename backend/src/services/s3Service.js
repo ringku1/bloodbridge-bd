@@ -109,7 +109,9 @@ async function uploadBuffer(userId, buffer, contentType) {
 // Used internally by the admin route only — not exposed as a public endpoint.
 async function generateViewUrl(s3Key) {
   const command = new GetObjectCommand({ Bucket: BUCKET, Key: s3Key });
-  return getSignedUrl(s3, command, { expiresIn: 900 }); // 15 minutes
+  // Use s3Public so the URL contains the LAN-accessible host (not minio:9000).
+  // 7-day expiry gives admins time to review without the link going stale.
+  return getSignedUrl(s3Public, command, { expiresIn: 7 * 24 * 60 * 60 });
 }
 
 module.exports = { ensureBucketExists, generateUploadUrl, generateViewUrl, uploadBuffer };

@@ -115,7 +115,7 @@ export default function VerificationsPage() {
               alt="NID"
               className="w-full rounded-lg object-contain max-h-96"
             />
-            <p className="text-xs text-gray-400 mt-2 text-center">This link expires in 15 minutes</p>
+            <p className="text-xs text-gray-400 mt-2 text-center">This link expires in 7 days</p>
           </div>
         </div>
       )}
