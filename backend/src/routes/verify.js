@@ -21,6 +21,7 @@ const express        = require('express');
 const multer         = require('multer');
 const prisma         = require('../config/prisma');
 const s3Service      = require('../services/s3Service');
+const fcmService     = require('../services/fcmService');
 const authMiddleware = require('../middleware/auth');
 const adminAuth      = require('../middleware/adminAuth');
 
@@ -155,13 +156,24 @@ router.put('/admin/:userId', adminAuth, async (req, res, next) => {
       select: {
         id:             true,
         name:           true,
-        phone:          true,   // for admin reference only — not logged elsewhere
+        phone:          true,
+        fcmToken:       true,
         verifiedStatus: true,
         nidPhotoUrl:    true,
       },
     });
 
-    // If admin wants to view the NID photo, generate a short-lived URL
+    // Notify the donor so the app updates without requiring a manual refresh
+    if (user.fcmToken) {
+      const messages = {
+        VERIFIED:   { title: '✅ Identity Verified!', body: 'Your NID has been approved. You now appear in blood request search results.' },
+        UNVERIFIED: { title: 'Verification Rejected', body: 'Your NID photo could not be verified. Please re-upload a clearer photo.' },
+        PENDING:    null,
+      };
+      const msg = messages[status];
+      if (msg) await fcmService.send(user.fcmToken, msg).catch(() => {});
+    }
+
     let nidPhotoViewUrl = null;
     if (user.nidPhotoUrl) {
       nidPhotoViewUrl = await s3Service.generateViewUrl(user.nidPhotoUrl);
@@ -170,7 +182,7 @@ router.put('/admin/:userId', adminAuth, async (req, res, next) => {
     res.json({
       message:        `User verification status updated to ${status}`,
       user,
-      nidPhotoViewUrl, // 15-minute URL to view the NID photo
+      nidPhotoViewUrl,
     });
   } catch (err) {
     next(err);

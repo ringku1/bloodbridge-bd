@@ -11,11 +11,12 @@
 //   4. App calls POST /api/verify/submit with the s3Key → verifiedStatus becomes PENDING
 //   5. Admin reviews via Postman: PUT /api/verify/admin/:userId { status: "VERIFIED" }
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
@@ -52,9 +53,9 @@ export default function VerificationScreen() {
   const [uploading, setUploading] = useState(false);
   const [status, setStatus]       = useState(user?.verifiedStatus || 'UNVERIFIED');
 
-  useEffect(() => {
-    fetchStatus();
-  }, []);
+  // Re-fetch every time the user navigates to this screen so admin approvals
+  // are reflected without needing a full app restart.
+  useFocusEffect(useCallback(() => { fetchStatus(); }, []));
 
   async function fetchStatus() {
     try {
