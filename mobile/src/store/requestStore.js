@@ -53,17 +53,5 @@ export const useRequestStore = create((set) => ({
     }
   },
 
-  // Donor accepts a blood request
-  acceptRequest: async (requestId) => {
-    set({ loading: true, error: null });
-    try {
-      await api.post(`/requests/${requestId}/accept`);
-      set({ loading: false });
-    } catch (err) {
-      set({ error: err.response?.data?.error || 'Failed to accept request', loading: false });
-      throw err;
-    }
-  },
-
   clearError: () => set({ error: null }),
 }));

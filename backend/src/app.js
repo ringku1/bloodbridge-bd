@@ -79,9 +79,21 @@ const otpLimiter = rateLimit({
   message:                { error: 'Too many OTP attempts — wait 1 minute.' },
 });
 
+// Tight limiter for admin endpoints: 20 requests per 15 minutes per IP.
+// Slows brute-force attempts against the ADMIN_SECRET header.
+const adminLimiter = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Too many admin requests — please try again in 15 minutes.' },
+});
+
 app.use('/api/', apiLimiter);
 app.use('/api/auth/send-otp',   otpLimiter);
 app.use('/api/auth/verify-otp', otpLimiter);
+app.use('/api/admin',           adminLimiter);
+app.use('/api/verify/admin',    adminLimiter);
 
 // ─── Request logging ──────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {

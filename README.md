@@ -125,6 +125,22 @@ Blood-Bridge/
 │   ├── .env.example
 │   └── package.json
 │
+├── admin/                        # Next.js 15 admin dashboard (web)
+│   ├── app/
+│   │   ├── login/page.js         # Admin secret login page
+│   │   └── (main)/
+│   │       ├── layout.js         # Sidebar + main content wrapper
+│   │       ├── dashboard/page.js # Stat cards (users, verifications, requests, donations)
+│   │       ├── verifications/page.js  # NID photo review — Approve / Reject
+│   │       ├── users/page.js     # Paginated user list with search + filters
+│   │       └── requests/page.js  # Paginated blood request list
+│   ├── components/
+│   │   ├── Sidebar.js            # Dark sidebar with red active state, logout
+│   │   └── Badge.js              # Color-coded status badges
+│   ├── lib/api.js                # Axios with x-admin-secret cookie interceptor
+│   ├── middleware.js             # Auth guard — redirects to /login if not authenticated
+│   └── .env.local               # NEXT_PUBLIC_API_URL=http://localhost:3000/api
+│
 └── mobile/
     ├── App.js                    # Root navigator (auth gate → 4-tab layout)
     ├── app.json                  # Expo config
@@ -136,7 +152,7 @@ Blood-Bridge/
         │   └── usePushNotifications.js  # FCM token registration + tap handler
         ├── store/
         │   ├── authStore.js      # Zustand: token + user (persisted to AsyncStorage)
-        │   └── requestStore.js   # Zustand: blood requests + donor accept action
+        │   └── requestStore.js   # Zustand: blood requests (create, fetch)
         ├── services/
         │   └── api.js            # Axios instance with JWT interceptor
         ├── screens/
@@ -286,6 +302,27 @@ export const API_BASE_URL = 'http://192.168.0.110:3000/api'; // ← replace with
 
 ---
 
+## Admin Dashboard Setup
+
+```bash
+cd admin
+npm install
+```
+
+The `.env.local` file is pre-configured for local development:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:3000/api
+```
+
+Start the dashboard:
+```bash
+npm run dev
+```
+
+Opens at **http://localhost:4000**. Log in with the `ADMIN_SECRET` value from `backend/.env`.
+
+---
+
 ## Running Everything Together
 
 ```bash
@@ -296,6 +333,10 @@ docker compose up -d
 # Terminal 2 — mobile
 cd mobile
 ./node_modules/expo/bin/cli start --clear
+
+# Terminal 3 — admin dashboard (optional)
+cd admin
+npm run dev        # → http://localhost:4000
 ```
 
 ---
@@ -330,6 +371,7 @@ Authorization: Bearer <JWT_TOKEN>
 - All API endpoints: 100 requests per 15 minutes per IP
 - OTP endpoints (`/auth/send-otp`, `/auth/verify-otp`): 5 requests per minute per IP
 - OTP verification: 3 failed attempts per phone → 15-minute lock
+- Admin endpoints (`/admin/*`, `/verify/admin/*`): 20 requests per 15 minutes per IP
 
 ---
 
@@ -379,11 +421,12 @@ Blood requests expire after 6 hours — a background job marks them `EXPIRED` ev
 
 | Method | Endpoint | Body / Header | Auth | Description |
 |---|---|---|---|---|
-| GET | `/verify/upload-url` | — | ✅ | Get S3 presigned PUT URL (valid 10 min) |
-| POST | `/verify/submit` | `{ s3Key }` | ✅ | Submit NID after upload → status = PENDING |
+| POST | `/verify/upload` | `multipart/form-data` field `photo` | ✅ | Upload NID photo via backend (recommended — avoids mobile→S3 issues) → returns `{ s3Key }` |
+| GET | `/verify/upload-url` | — | ✅ | Get presigned S3 PUT URL for direct mobile upload (alternative) |
+| POST | `/verify/submit` | `{ s3Key }` | ✅ | Register the uploaded photo → status = PENDING |
 | GET | `/verify/status` | — | ✅ | Check own verification status |
-| PUT | `/verify/admin/:userId` | `{ status }` + `x-admin-secret` header | Admin | Approve/reject NID |
-| GET | `/verify/admin/pending` | `x-admin-secret` header | Admin | List PENDING submissions with presigned photo URLs |
+| PUT | `/verify/admin/:userId` | `{ status }` + `x-admin-secret` header | Admin | Approve/reject NID (status: `VERIFIED` \| `UNVERIFIED` \| `PENDING`) |
+| GET | `/verify/admin/pending` | `x-admin-secret` header | Admin | List PENDING submissions with presigned photo URLs (7-day expiry) |
 
 ---
 
@@ -395,6 +438,20 @@ Blood requests expire after 6 hours — a background job marks them `EXPIRED` ev
 | DELETE | `/call/:sessionId` | — | ✅ | End proxy session |
 
 Both the donor and requester can call `POST /call/initiate`. The requester dials `donorProxyNumber`; the donor dials `requesterProxyNumber`. Neither sees the other's real phone number.
+
+---
+
+### Admin Dashboard
+
+All admin routes require `x-admin-secret: <ADMIN_SECRET>` header.
+
+| Method | Endpoint | Query Params | Description |
+|---|---|---|---|
+| GET | `/admin/stats` | — | Dashboard counters (users, pending verifications, active requests, donations) |
+| GET | `/admin/users` | `page`, `limit`, `search`, `verifiedStatus`, `bloodGroup` | Paginated user list with response/request counts |
+| GET | `/admin/requests` | `page`, `limit`, `status`, `bloodGroup` | Paginated blood request list with requester info |
+
+These endpoints power the web admin dashboard at `http://localhost:4000`.
 
 ---
 
@@ -605,7 +662,8 @@ All features work locally with zero real external accounts:
 | `AWS_SECRET_ACCESS_KEY` | ✅ | `minioadmin` (dev) | AWS IAM secret — use `minioadmin` for local MinIO |
 | `AWS_REGION` | ✅ | `us-east-1` (dev) | `us-east-1` for MinIO; `ap-southeast-1` for real AWS |
 | `AWS_S3_BUCKET` | ✅ | `blood-bridge-nid-photos` | Bucket name (auto-created in MinIO on first start) |
-| `AWS_ENDPOINT` | Dev only | `http://minio:9000` | Points the S3 SDK at MinIO. **Remove this line in production** |
+| `AWS_ENDPOINT` | Dev only | `http://minio:9000` | Points the S3 SDK at MinIO (internal Docker hostname). **Remove this line in production** |
+| `MINIO_PUBLIC_URL` | Dev only | `http://<YOUR_LAN_IP>:9000` | Public hostname used when signing presigned URLs returned to mobile/browser. Must match the host the client will connect to. Example: `http://192.168.0.112:9000`. **Remove in production** |
 | `PORT` | — | `3000` | Server port |
 | `NODE_ENV` | — | `development` | `development` or `production` |
 
@@ -728,3 +786,28 @@ cd backend && npx prisma migrate dev --name init
 
 **Rate limit hit during testing (429 response)**
 → In development this is unlikely (100 req/15 min). If you hit the OTP limiter (5/min), wait 1 minute. The OTP phone-level lock (3 failures) resets after 15 minutes.
+
+**Admin dashboard port 4000 already in use**
+```bash
+# Find and kill the process using port 4000
+kill $(lsof -ti :4000)
+# Then restart
+cd admin && npm run dev
+```
+
+**Admin dashboard shows "Failed to fetch" on login**
+→ Backend must be running first. Check:
+```bash
+curl http://localhost:3000/health
+```
+
+**NID photo not showing in admin dashboard**
+→ Check `MINIO_PUBLIC_URL` in `backend/.env`. It must be set to your machine's LAN IP (not `minio:9000`), e.g. `http://192.168.0.112:9000`. After changing it, rebuild and restart the backend:
+```bash
+cd backend && docker compose build backend && docker compose up -d backend
+```
+
+**Mobile NID upload shows "network error" or "no image provided"**
+→ The mobile app posts to `POST /verify/upload` (multipart). If you see:
+- *Network error*: Check `API_BASE_URL` in `mobile/src/config.js` matches your current LAN IP
+- *No image provided*: Do not set `Content-Type` manually in the upload request — let React Native's native `fetch` set it with the correct multipart boundary automatically
