@@ -75,7 +75,9 @@ async function endProxySession(sessionSid) {
 
 // Returns the proxy numbers assigned to each participant.
 // Used by /call/initiate to show each party what number to call.
-async function getProxyNumbers(sessionSid) {
+// donorPhone / requesterPhone are used to match participants by identifier
+// instead of by array index — Twilio does not guarantee list order.
+async function getProxyNumbers(sessionSid, donorPhone, requesterPhone) {
   if (!hasTwilioCreds) {
     const mockNumbers = {
       donorProxyNumber:     '+8800000000001',
@@ -88,9 +90,12 @@ async function getProxyNumbers(sessionSid) {
   const service      = getClient().proxy.v1.services(process.env.TWILIO_PROXY_SERVICE_SID);
   const participants = await service.sessions(sessionSid).participants.list();
 
+  const donor     = participants.find((p) => p.identifier === donorPhone);
+  const requester = participants.find((p) => p.identifier === requesterPhone);
+
   return {
-    donorProxyNumber:     participants[0]?.proxyIdentifier || null,
-    requesterProxyNumber: participants[1]?.proxyIdentifier || null,
+    donorProxyNumber:     donor?.proxyIdentifier     || null,
+    requesterProxyNumber: requester?.proxyIdentifier || null,
   };
 }
 

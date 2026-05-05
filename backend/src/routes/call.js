@@ -64,9 +64,14 @@ router.post('/initiate', async (req, res, next) => {
       return res.status(403).json({ error: 'You are not a participant in this blood request' });
     }
 
+    const donorPhone     = response.donor.phone;
+    const requesterPhone = response.request.requester.phone;
+
     // If a session already exists, return the existing proxy numbers
     if (response.proxySessionId) {
-      const numbers = await twilioService.getProxyNumbers(response.proxySessionId);
+      const numbers = await twilioService.getProxyNumbers(
+        response.proxySessionId, donorPhone, requesterPhone
+      );
       return res.json({
         sessionId: response.proxySessionId,
         ...numbers,
@@ -74,10 +79,7 @@ router.post('/initiate', async (req, res, next) => {
     }
 
     // Create new Twilio Proxy session
-    const sessionSid = await twilioService.createProxySession(
-      response.donor.phone,
-      response.request.requester.phone
-    );
+    const sessionSid = await twilioService.createProxySession(donorPhone, requesterPhone);
 
     // Save session SID to DonorResponse so we can end it later
     await prisma.donorResponse.update({
@@ -85,7 +87,7 @@ router.post('/initiate', async (req, res, next) => {
       data:  { proxySessionId: sessionSid },
     });
 
-    const numbers = await twilioService.getProxyNumbers(sessionSid);
+    const numbers = await twilioService.getProxyNumbers(sessionSid, donorPhone, requesterPhone);
 
     res.json({
       sessionId: sessionSid,

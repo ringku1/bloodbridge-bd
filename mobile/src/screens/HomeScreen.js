@@ -9,11 +9,12 @@
 //   - Verification banner if not yet VERIFIED
 //   - Quick "Request Blood" button (navigates to RequestBloodScreen)
 
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Switch, ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { COLORS } from '../config';
@@ -25,9 +26,7 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading]         = useState(true);
   const [toggling, setToggling]       = useState(false);
 
-  useEffect(() => {
-    fetchEligibility();
-  }, []);
+  useFocusEffect(useCallback(() => { fetchEligibility(); }, []));
 
   async function fetchEligibility() {
     try {

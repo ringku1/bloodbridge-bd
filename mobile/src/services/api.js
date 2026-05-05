@@ -26,6 +26,12 @@ const api = axios.create({
   },
 });
 
+// Upload endpoint needs extra time on slow networks
+api.interceptors.request.use((config) => {
+  if (config.url?.includes('/verify/upload')) config.timeout = 60000;
+  return config;
+});
+
 // Attach the JWT token to every outgoing request.
 // The token is read from the Zustand store at request time (not at setup time),
 // so it always reflects the latest value even after login/logout.
