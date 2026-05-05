@@ -1,9 +1,9 @@
 # docker-compose.prod.yml
 #
-# Production deployment — EC2 only runs the backend container.
-# PostgreSQL → AWS RDS
-# Redis      → AWS ElastiCache
-# Storage    → AWS S3
+# Production deployment — runs only the backend container.
+# PostgreSQL → Neon (managed, external)
+# Redis      → Redis Cloud (managed, external)
+# Storage    → Backblaze B2 (S3-compatible, external)
 #
 # Usage on EC2:
 #   docker compose -f docker-compose.prod.yml up -d

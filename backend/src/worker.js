@@ -1,6 +1,6 @@
 // worker.js
 //
-// Standalone worker process — runs on RunSite (or any persistent host).
+// Standalone worker process — runs on Koyeb (or any persistent host).
 // Does NOT start an HTTP server. Only runs:
 //   - Bull escalation queue worker (15 min + 30 min escalation jobs)
 //   - node-cron eligibility reset (daily 6 AM + 15-min expiry check)
@@ -8,8 +8,8 @@
 // Why separate from server.js?
 //   When deploying the API on Vercel (serverless), workers cannot run there
 //   because Vercel functions are stateless and short-lived. This process runs
-//   on a separate persistent service (RunSite free tier) that shares the same
-//   PostgreSQL (Neon) and Redis (RunSite) as the Vercel API.
+//   on a separate persistent service (Koyeb free tier) that shares the same
+//   PostgreSQL (Neon) and Redis (Redis Cloud) as the Vercel API.
 //
 // Run: node src/worker.js   or   npm run start:worker
 

@@ -13,7 +13,7 @@
 //     4. Backend stores the key in User.nidPhotoUrl
 //
 // In development: AWS_ENDPOINT points the SDK at MinIO (local S3 in Docker).
-// In production:  Remove AWS_ENDPOINT — the SDK routes to real AWS automatically.
+// In production:  AWS_ENDPOINT points to Backblaze B2 (or any S3-compatible provider).
 
 const { S3Client, GetObjectCommand, PutObjectCommand,
         CreateBucketCommand, HeadBucketCommand } = require('@aws-sdk/client-s3');
@@ -28,8 +28,8 @@ const baseCredentials = {
   },
 };
 
-// Internal client — used for backend→MinIO operations (bucket creation, direct puts).
-// Uses Docker-internal endpoint (http://minio:9000).
+// Internal client — used for backend→storage operations (bucket creation, direct puts).
+// In dev: uses Docker-internal MinIO endpoint (http://minio:9000).
 const s3Config = { ...baseCredentials };
 if (process.env.AWS_ENDPOINT) {
   s3Config.endpoint       = process.env.AWS_ENDPOINT;
@@ -39,9 +39,9 @@ const s3 = new S3Client(s3Config);
 
 // Public client — used ONLY for generating presigned upload URLs returned to mobile.
 // Presigned URLs embed the host in the HMAC signature; if the URL's host doesn't match
-// the host the mobile device will connect to, MinIO rejects with SignatureDoesNotMatch.
-// Using MINIO_PUBLIC_URL here ensures the signature is computed with the LAN-accessible
-// host so the mobile PUT succeeds.
+// the host the mobile device will connect to, the storage provider rejects with SignatureDoesNotMatch.
+// In dev: MINIO_PUBLIC_URL is the LAN-accessible MinIO host so the mobile PUT succeeds.
+// In prod: AWS_ENDPOINT (Backblaze B2) is already publicly accessible — no override needed.
 const s3PublicConfig = { ...baseCredentials };
 if (process.env.MINIO_PUBLIC_URL) {
   s3PublicConfig.endpoint       = process.env.MINIO_PUBLIC_URL;
@@ -56,7 +56,7 @@ const BUCKET = process.env.AWS_S3_BUCKET;
 
 // Called once at server startup (from server.js).
 // Creates the bucket if it doesn't exist — safe to call repeatedly (no-op if exists).
-// In production (real AWS) the bucket is created manually; this mainly helps MinIO dev.
+// In production the bucket is created manually in the provider dashboard; this mainly helps MinIO dev.
 async function ensureBucketExists() {
   if (!BUCKET) return;
   try {
@@ -67,8 +67,7 @@ async function ensureBucketExists() {
       await s3.send(new CreateBucketCommand({ Bucket: BUCKET }));
       console.log(`[S3] Bucket "${BUCKET}" created`);
     } else {
-      // Credentials missing or MinIO not yet reachable — log and continue.
-      // The bucket check will happen again on the next request.
+      // Credentials missing or storage not yet reachable — log and continue.
       console.warn(`[S3] Could not verify bucket: ${err.message}`);
     }
   }
@@ -84,15 +83,15 @@ async function generateUploadUrl(userId) {
     ContentType: 'image/jpeg',
   });
 
-  // Use s3Public so the presigned URL is signed with the LAN-accessible host.
-  // MinIO re-derives the expected signature from the incoming Host header, so the
-  // client's Host must match the host used when signing — using s3Public ensures that.
+  // Use s3Public so the presigned URL is signed with the correct public host.
+  // The storage provider re-derives the expected signature from the incoming Host header,
+  // so the client's Host must match the host used when signing.
   const uploadUrl = await getSignedUrl(s3Public, command, { expiresIn: 600 });
   return { uploadUrl, s3Key };
 }
 
-// Upload a file buffer directly to S3 from the backend.
-// Used by POST /api/verify/upload — avoids direct mobile→MinIO connectivity.
+// Upload a file buffer directly to S3-compatible storage from the backend.
+// Used by POST /api/verify/upload — avoids direct mobile→storage connectivity.
 // Returns: { s3Key }
 async function uploadBuffer(userId, buffer, contentType) {
   const s3Key = `nid-photos/${userId}/${randomUUID()}.jpg`;
@@ -109,7 +108,7 @@ async function uploadBuffer(userId, buffer, contentType) {
 // Used internally by the admin route only — not exposed as a public endpoint.
 async function generateViewUrl(s3Key) {
   const command = new GetObjectCommand({ Bucket: BUCKET, Key: s3Key });
-  // Use s3Public so the URL contains the LAN-accessible host (not minio:9000).
+  // Use s3Public so the URL contains the correct public host.
   // 7-day expiry gives admins time to review without the link going stale.
   return getSignedUrl(s3Public, command, { expiresIn: 7 * 24 * 60 * 60 });
 }

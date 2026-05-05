@@ -4,7 +4,7 @@
 //
 // Endpoints:
 //   PUT  /api/donors/profile      — update name, blood group, GPS location, district
-//   PUT  /api/donors/fcm-token    — save Firebase push notification token
+//   PUT  /api/donors/fcm-token    — save Expo push notification token
 //   PUT  /api/donors/availability — toggle isAvailable (e.g. donor going on holiday)
 //   POST /api/donors/log-donation — manually record a donation (locks donor for 120 days)
 //   GET  /api/donors/eligibility  — check if donor can donate + days remaining

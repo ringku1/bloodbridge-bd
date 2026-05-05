@@ -1,13 +1,14 @@
 # docker-compose.worker.yml
 #
-# Worker-only deployment for RunSite.
+# Worker-only deployment for Koyeb.
 # Runs Bull queue + cron jobs. No HTTP server.
 #
-# Use this when the API is deployed on Vercel and workers run on RunSite.
-# Both services share the same DATABASE_URL and REDIS_URL.
+# Use this when the API is deployed on Vercel and the worker runs on Koyeb.
+# Both services share the same DATABASE_URL (Neon) and REDIS_URL (Redis Cloud).
 #
-# Usage on RunSite:
-#   Set start command to: npm run start:worker
+# Usage on Koyeb:
+#   Build: Docker (point to this repo, Dockerfile = Dockerfile.worker)
+#   Start command: node src/worker.js
 
 services:
   worker:

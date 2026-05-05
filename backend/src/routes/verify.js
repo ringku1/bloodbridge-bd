@@ -55,8 +55,8 @@ router.get('/upload-url', authMiddleware, async (req, res, next) => {
 
 // ─── POST /api/verify/upload ──────────────────────────────────────────────────
 // Receives the NID photo as multipart/form-data (field name: "photo") and
-// uploads it to S3/MinIO from the backend. Avoids direct mobile→MinIO
-// connectivity and React Native blob issues with presigned URLs.
+// uploads it to S3-compatible storage from the backend. Avoids React Native
+// blob issues with presigned PUT URLs on some devices.
 // Returns: { s3Key }
 router.post('/upload', authMiddleware, upload.single('photo'), async (req, res, next) => {
   try {
