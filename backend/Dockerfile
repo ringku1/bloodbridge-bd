@@ -20,11 +20,10 @@ WORKDIR /app
 RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
+# Copy schema before npm ci so the postinstall "prisma generate" has it available
+COPY prisma ./prisma
 # npm ci is faster and stricter than npm install — uses exact lockfile versions
 RUN npm ci
-
-COPY prisma ./prisma
-RUN npx prisma generate
 
 # ─── Stage 2: runtime ─────────────────────────────────────────────────────────
 FROM node:20-slim

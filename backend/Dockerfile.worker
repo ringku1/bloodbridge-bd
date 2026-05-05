@@ -1,3 +1,28 @@
+# Dockerfile.worker
+#
+# Worker-only image for Koyeb deployment.
+# Runs Bull queue + cron jobs. No HTTP server.
+#
+# Multi-stage build (same pattern as main Dockerfile):
+#   Stage 1 (builder) — full npm install (devDeps included) + prisma generate
+#   Stage 2 (runtime) — prod node_modules + source only
+#
+# prisma CLI is a devDependency — needed only at build time to generate the client.
+# Keeping it out of the runtime image saves ~30 MB.
+
+# ─── Stage 1: builder ─────────────────────────────────────────────────────────
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+COPY package*.json ./
+# Copy schema before npm ci so the postinstall "prisma generate" has it available
+COPY prisma ./prisma
+RUN npm ci
+
+# ─── Stage 2: runtime ─────────────────────────────────────────────────────────
 FROM node:20-slim
 
 WORKDIR /app
@@ -6,12 +31,13 @@ RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists
 
 ENV NODE_ENV=production
 
-COPY package*.json ./
-RUN npm ci --omit=dev
+# Copy only production node_modules and generated Prisma client from builder
+COPY --from=builder /app/node_modules ./node_modules
 
+# Schema kept for consistency; worker doesn't run migrations but prisma client needs engine
 COPY prisma ./prisma
-RUN npx prisma generate
 
 COPY src ./src
+COPY package*.json ./
 
 CMD ["node", "src/worker.js"]
