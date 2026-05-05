@@ -1,0 +1,19 @@
+# docker-compose.worker.yml
+#
+# Worker-only deployment for RunSite.
+# Runs Bull queue + cron jobs. No HTTP server.
+#
+# Use this when the API is deployed on Vercel and workers run on RunSite.
+# Both services share the same DATABASE_URL and REDIS_URL.
+#
+# Usage on RunSite:
+#   Set start command to: npm run start:worker
+
+services:
+  worker:
+    build:
+      context:    .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file:
+      - .env.prod
