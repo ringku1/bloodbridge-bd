@@ -18,6 +18,7 @@ A mobile-first blood donor app for Bangladesh that solves three real problems ex
 ## Tech stack
 
 ### Mobile (frontend)
+
 - **React Native** (Expo managed workflow)
 - **Zustand** for state management
 - **React Native Maps** + Google Maps API for geolocation
@@ -25,6 +26,7 @@ A mobile-first blood donor app for Bangladesh that solves three real problems ex
 - **Axios** for HTTP requests
 
 ### Backend
+
 - **Node.js + Express**
 - **JWT** for auth tokens
 - **OTP via SMS** — SSL Wireless (Bangladesh SMS gateway)
@@ -35,11 +37,13 @@ A mobile-first blood donor app for Bangladesh that solves three real problems ex
 - **Multer** for file upload middleware
 
 ### Database
+
 - **PostgreSQL** with **PostGIS** extension for geospatial radius queries
 - **Redis** for Bull queues and caching
 - **Prisma ORM** for schema and queries
 
 ### Infrastructure
+
 - **Docker + docker-compose** (postgres, redis, backend as services)
 - **GitHub Actions** for CI/CD
 - **Railway or AWS EC2** for hosting
@@ -212,12 +216,14 @@ model Caregiver {
 ## Key API endpoints
 
 ### Auth
+
 ```
 POST /api/auth/send-otp        body: { phone }
 POST /api/auth/verify-otp      body: { phone, otp } → returns JWT
 ```
 
 ### Donor
+
 ```
 PUT  /api/donors/profile       body: { name, bloodGroup, latitude, longitude, district }
 PUT  /api/donors/fcm-token     body: { fcmToken }
@@ -226,6 +232,7 @@ GET  /api/donors/eligibility   → { isAvailable, eligibleAgainAt, daysRemaining
 ```
 
 ### Verification
+
 ```
 GET  /api/verify/upload-url    → S3 presigned URL for NID photo upload
 POST /api/verify/submit        body: { s3Key } → sets verifiedStatus=PENDING
@@ -233,6 +240,7 @@ GET  /api/verify/status        → { verifiedStatus }
 ```
 
 ### Blood requests
+
 ```
 POST /api/requests             body: { bloodGroup, hospitalName, latitude, longitude, unitsNeeded }
 GET  /api/requests/:id         → full request with responses
@@ -242,6 +250,7 @@ GET  /api/requests/active      → requester sees their open requests
 ```
 
 ### Masked calling
+
 ```
 POST /api/call/initiate        body: { requestId } → returns { proxyNumberForDonor, proxyNumberForRequester }
 DELETE /api/call/:sessionId    → ends proxy session
@@ -252,6 +261,7 @@ DELETE /api/call/:sessionId    → ends proxy session
 ## Feature 1: Verified donor + masked contact
 
 ### How verification works
+
 1. User hits `GET /api/verify/upload-url` → backend generates an S3 presigned PUT URL
 2. Mobile uploads NID photo directly to S3 (no backend proxy, saves bandwidth)
 3. User hits `POST /api/verify/submit` with the S3 key
@@ -259,6 +269,7 @@ DELETE /api/call/:sessionId    → ends proxy session
 5. Only verified donors appear in radius search results (filter: `verifiedStatus = 'VERIFIED'`)
 
 ### How masked calling works
+
 1. When donor accepts a request, backend calls `twilioService.createProxySession(donorPhone, requesterPhone)`
 2. Twilio returns two proxy numbers (one per participant)
 3. Both numbers stored in `DonorResponse.proxySessionId`
@@ -267,11 +278,19 @@ DELETE /api/call/:sessionId    → ends proxy session
 
 ```js
 // twilioService.js skeleton
-const client = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const client = require("twilio")(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN,
+);
 
 async function createProxySession(donorPhone, requesterPhone) {
-  const service = await client.proxy.v1.services(process.env.TWILIO_PROXY_SERVICE_SID);
-  const session = await service.sessions.create({ uniqueName: `session_${Date.now()}`, ttl: 7200 });
+  const service = await client.proxy.v1.services(
+    process.env.TWILIO_PROXY_SERVICE_SID,
+  );
+  const session = await service.sessions.create({
+    uniqueName: `session_${Date.now()}`,
+    ttl: 7200,
+  });
   await session.participants.create({ identifier: donorPhone });
   await session.participants.create({ identifier: requesterPhone });
   return session.sid;
@@ -283,7 +302,9 @@ async function createProxySession(donorPhone, requesterPhone) {
 ## Feature 2: 120-day auto-eligibility tracker
 
 ### Donation confirmation trigger
+
 When `POST /api/requests/:id/confirm` is called:
+
 ```js
 await prisma.user.update({
   where: { id: donorId },
@@ -291,17 +312,18 @@ await prisma.user.update({
     isAvailable: false,
     lastDonatedAt: new Date(),
     eligibleAgainAt: new Date(Date.now() + 120 * 24 * 60 * 60 * 1000),
-  }
+  },
 });
 ```
 
 ### Daily cron job (eligibilityWorker.js)
+
 Runs at 6:00 AM every day. Finds all donors whose `eligibleAgainAt <= now` and flips `isAvailable = true`, then sends FCM push.
 
 ```js
-const cron = require('node-cron');
+const cron = require("node-cron");
 
-cron.schedule('0 6 * * *', async () => {
+cron.schedule("0 6 * * *", async () => {
   const donors = await prisma.user.findMany({
     where: {
       isAvailable: false,
@@ -310,15 +332,15 @@ cron.schedule('0 6 * * *', async () => {
   });
 
   await prisma.user.updateMany({
-    where: { id: { in: donors.map(d => d.id) } },
+    where: { id: { in: donors.map((d) => d.id) } },
     data: { isAvailable: true },
   });
 
   for (const donor of donors) {
     if (donor.fcmToken) {
       await fcmService.send(donor.fcmToken, {
-        title: 'You can donate again!',
-        body: 'Your 120-day wait is over. You are now eligible to donate blood.',
+        title: "You can donate again!",
+        body: "Your 120-day wait is over. You are now eligible to donate blood.",
       });
     }
   }
@@ -330,11 +352,14 @@ cron.schedule('0 6 * * *', async () => {
 ## Feature 3: Caregiver escalation system
 
 ### Bull queue setup
+
 When a blood request is created, two delayed jobs are scheduled:
 
 ```js
-const Queue = require('bull');
-const escalationQueue = new Queue('escalation', { redis: { host: 'redis', port: 6379 } });
+const Queue = require("bull");
+const escalationQueue = new Queue("escalation", {
+  redis: { host: "redis", port: 6379 },
+});
 
 // After creating blood request:
 await escalationQueue.add({ requestId, level: 1 }, { delay: 15 * 60 * 1000 }); // 15 min
@@ -385,14 +410,24 @@ escalationQueue.process(async (job) => {
 ```
 
 ### Cancelling jobs when donor accepts
+
 Store job IDs when scheduling so they can be removed:
 
 ```js
-const job1 = await escalationQueue.add({ requestId, level: 1 }, { delay: 900000 });
-const job2 = await escalationQueue.add({ requestId, level: 2 }, { delay: 1800000 });
+const job1 = await escalationQueue.add(
+  { requestId, level: 1 },
+  { delay: 900000 },
+);
+const job2 = await escalationQueue.add(
+  { requestId, level: 2 },
+  { delay: 1800000 },
+);
 
 // Store job IDs in Redis keyed by requestId
-await redis.set(`escalation_jobs:${requestId}`, JSON.stringify([job1.id, job2.id]));
+await redis.set(
+  `escalation_jobs:${requestId}`,
+  JSON.stringify([job1.id, job2.id]),
+);
 
 // When donor accepts:
 const jobIds = JSON.parse(await redis.get(`escalation_jobs:${requestId}`));
@@ -476,7 +511,7 @@ AWS_S3_BUCKET=blood-donor-nid-photos
 ## docker-compose.yml
 
 ```yaml
-version: '3.8'
+version: "3.8"
 services:
   postgres:
     image: postgis/postgis:15-3.3
