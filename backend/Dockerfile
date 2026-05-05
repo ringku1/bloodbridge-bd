@@ -51,5 +51,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health',(r)=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
 
-# `npm start` runs `node src/server.js` — no nodemon in production
-CMD ["npm", "start"]
+# Run DB migrations first, then start the server.
+# Railway uses this CMD directly (no docker-compose command override in prod).
+CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
