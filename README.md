@@ -70,7 +70,7 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 | Auth | OTP via SSL Wireless (Bangladesh) + JWT |
 | Push notifications | Expo Push Notification Service (via expo-server-sdk) |
 | Masked calls | Twilio Proxy API |
-| File storage | AWS S3 in production; MinIO (local S3-compatible) in dev |
+| File storage | Backblaze B2 in production (S3-compatible, free 10 GB); MinIO in dev |
 | ORM | Prisma |
 | Infrastructure | Docker + docker-compose |
 | CI/CD | GitHub Actions + Dependabot |
@@ -103,7 +103,7 @@ Blood-Bridge/
 │   │   │   └── eligibilityWorker.js  # node-cron: daily 120-day reset + 15-min expiry
 │   │   ├── services/
 │   │   │   ├── smsService.js     # SSL Wireless wrapper (mock in dev)
-│   │   │   ├── fcmService.js     # Firebase push notification wrapper (mock in dev)
+│   │   │   ├── fcmService.js     # Expo push notification wrapper (mock in dev)
 │   │   │   ├── twilioService.js  # Proxy session management (mock in dev)
 │   │   │   ├── s3Service.js      # Presigned URL generation + bucket auto-create
 │   │   │   └── geoService.js     # PostGIS ST_DWithin raw SQL (coordinate-validated)
@@ -389,7 +389,7 @@ Authorization: Bearer <JWT_TOKEN>
 | Method | Endpoint | Body | Auth | Description |
 |---|---|---|---|---|
 | PUT | `/donors/profile` | `{ name?, bloodGroup?, latitude?, longitude?, district? }` | ✅ | Update profile (at least one field required) |
-| PUT | `/donors/fcm-token` | `{ fcmToken }` | ✅ | Save Firebase push token |
+| PUT | `/donors/fcm-token` | `{ fcmToken }` | ✅ | Save Expo push notification token |
 | PUT | `/donors/availability` | `{ isAvailable }` | ✅ | Toggle availability (guarded by 120-day rule) |
 | POST | `/donors/log-donation` | `{ donatedAt? }` | ✅ | Manually log a donation → lock for 120 days |
 | GET | `/donors/eligibility` | — | ✅ | Eligibility status + days remaining |
@@ -652,18 +652,15 @@ All features work locally with zero real external accounts:
 | `USE_MOCK_SMS` | — | `true` | `true` = print OTP to console; `false` = real SSL Wireless SMS |
 | `SSL_WIRELESS_API_KEY` | Prod | — | SSL Wireless API key |
 | `SSL_WIRELESS_SID` | Prod | — | SSL Wireless sender ID |
-| `FIREBASE_PROJECT_ID` | Prod | — | Firebase project ID |
-| `FIREBASE_PRIVATE_KEY` | Prod | — | Firebase service account private key (PEM) |
-| `FIREBASE_CLIENT_EMAIL` | Prod | — | Firebase service account email |
 | `TWILIO_ACCOUNT_SID` | Prod | — | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | Prod | — | Twilio auth token |
 | `TWILIO_PROXY_SERVICE_SID` | Prod | — | Twilio Proxy service SID |
-| `AWS_ACCESS_KEY_ID` | ✅ | `minioadmin` (dev) | AWS IAM key — use `minioadmin` for local MinIO |
-| `AWS_SECRET_ACCESS_KEY` | ✅ | `minioadmin` (dev) | AWS IAM secret — use `minioadmin` for local MinIO |
-| `AWS_REGION` | ✅ | `us-east-1` (dev) | `us-east-1` for MinIO; `ap-southeast-1` for real AWS |
+| `AWS_ACCESS_KEY_ID` | ✅ | `minioadmin` (dev) | Dev: MinIO key. Prod: Backblaze B2 keyID |
+| `AWS_SECRET_ACCESS_KEY` | ✅ | `minioadmin` (dev) | Dev: MinIO secret. Prod: Backblaze B2 applicationKey |
+| `AWS_REGION` | ✅ | `us-east-1` (dev) | Dev: `us-east-1`. Prod: Backblaze region e.g. `us-west-004` |
 | `AWS_S3_BUCKET` | ✅ | `blood-bridge-nid-photos` | Bucket name (auto-created in MinIO on first start) |
-| `AWS_ENDPOINT` | Dev only | `http://minio:9000` | Points the S3 SDK at MinIO (internal Docker hostname). **Remove this line in production** |
-| `MINIO_PUBLIC_URL` | Dev only | `http://<YOUR_LAN_IP>:9000` | Public hostname used when signing presigned URLs returned to mobile/browser. Must match the host the client will connect to. Example: `http://192.168.0.112:9000`. **Remove in production** |
+| `AWS_ENDPOINT` | ✅ | `http://minio:9000` (dev) | Dev: MinIO Docker hostname. Prod: Backblaze B2 endpoint e.g. `https://s3.us-west-004.backblazeb2.com` |
+| `MINIO_PUBLIC_URL` | Dev only | `http://<YOUR_LAN_IP>:9000` | Dev only — LAN-accessible MinIO host for presigned URLs. **Do not set in production** |
 | `PORT` | — | `3000` | Server port |
 | `NODE_ENV` | — | `development` | `development` or `production` |
 
@@ -694,19 +691,48 @@ eas init   # adds projectId to app.json automatically
 3. Add phone numbers to the proxy pool
 4. Copy Account SID, Auth Token, Proxy Service SID to `.env`
 
-### Cloudflare R2 (NID Photo Storage — recommended)
-1. Sign up at [cloudflare.com](https://cloudflare.com) — free
+### Backblaze B2 (NID Photo Storage — recommended, free, no credit card)
+1. Sign up at [backblaze.com](https://backblaze.com) — free, no credit card
+2. Go to **B2 Cloud Storage → Buckets → Create a Bucket**
+   - Name: `blood-bridge-nid-photos`, Files: **Private**
+3. Go to **App Keys → Add a New Application Key**
+   - Name: `blood-bridge`, Access: Read & Write on your bucket
+4. Copy `keyID` → `AWS_ACCESS_KEY_ID`, `applicationKey` → `AWS_SECRET_ACCESS_KEY`
+5. From the bucket page, copy the **Endpoint** → `AWS_ENDPOINT`
+6. Set `AWS_REGION` to the region part of the endpoint (e.g. `us-west-004`)
+7. Remove `MINIO_PUBLIC_URL` from your production env vars
+
+### Cloudflare R2 (NID Photo Storage — alternative, requires credit card on file)
+1. Sign up at [cloudflare.com](https://cloudflare.com)
 2. Go to **R2 → Create bucket** → name it `blood-bridge-nid-photos`
 3. Go to **R2 → Manage R2 API Tokens → Create API Token** (Object Read & Write)
-4. Copy Account ID, Access Key ID, Secret Access Key to `.env`
-5. Remove `MINIO_PUBLIC_URL` from `.env`; set `AWS_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com`
+4. Set `AWS_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com`, `AWS_REGION=auto`
 
-### AWS S3 (NID Photo Storage — alternative)
-1. Go to [AWS Console → IAM](https://console.aws.amazon.com/iam)
-2. Create a user → attach **AmazonS3FullAccess** policy (or scope it to your bucket)
-3. Generate access keys → copy to `.env`
-4. Remove `AWS_ENDPOINT` and `MINIO_PUBLIC_URL` from `.env`
-5. Create an S3 bucket in `ap-southeast-1`
+---
+
+## Production Deployment
+
+The production stack runs entirely on **free tiers, no credit card required**:
+
+| Service | Platform | Purpose |
+|---|---|---|
+| API (Express) | Vercel | Stateless HTTP routes |
+| Database | Neon | PostgreSQL + PostGIS (free 0.5 GB) |
+| Cache + Queue | Redis Cloud | Redis (free 30 MB) |
+| Worker | Koyeb | Bull queue + cron (always-on, free) |
+| File Storage | Backblaze B2 | NID photos (free 10 GB) |
+| SMS | SSL Wireless | OTP (mock mode until live) |
+| Push | Expo Push | Free, no credentials |
+
+### Deploy order
+
+1. **Neon** — create project (Singapore region) → enable PostGIS → run `prisma migrate deploy`
+2. **Redis Cloud** — create free database (Singapore) → copy `REDIS_URL`
+3. **Backblaze B2** — create private bucket → create App Key → copy credentials
+4. **Vercel** — import repo, root dir = `backend`, add all env vars → deploy
+5. **Koyeb** — create service from repo, `Dockerfile.worker`, add `DATABASE_URL` + `REDIS_URL` + `JWT_SECRET` → deploy
+
+See `backend/.env.prod.example` for the full list of environment variables.
 
 ---
 
@@ -718,7 +744,7 @@ eas init   # adds projectId to app.json automatically
 | 2 | Prisma schema + migration | `prisma/schema.prisma` |
 | 3 | Auth routes (OTP + JWT) | `routes/auth.js`, `services/smsService.js` |
 | 4 | Donor profile routes | `routes/donors.js` |
-| 5 | Blood requests + PostGIS + FCM | `routes/requests.js`, `services/geoService.js`, `services/fcmService.js` |
+| 5 | Blood requests + PostGIS + Expo Push | `routes/requests.js`, `services/geoService.js`, `services/fcmService.js` |
 | 6 | Eligibility cron (120-day reset + expiry) | `workers/eligibilityWorker.js` |
 | 7 | Bull escalation queue | `workers/escalationWorker.js` |
 | 8 | NID verification + S3 + admin | `routes/verify.js`, `services/s3Service.js` |
@@ -743,9 +769,6 @@ sudo systemctl stop redis-server postgresql
 docker compose ps
 docker compose logs postgres
 ```
-
-**Backend crashes with `FirebaseAppError: Invalid PEM`**
-→ Firebase credentials are still placeholders. Leave them blank — the app runs in FCM mock mode automatically when no valid credentials are present.
 
 **OTP not appearing**
 → Make sure `USE_MOCK_SMS=true` is in `.env` and watch the **backend logs**:
