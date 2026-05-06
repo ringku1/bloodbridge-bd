@@ -66,7 +66,8 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 | Mobile | React Native 0.79 (Expo SDK 54 managed), Zustand, Axios |
 | Backend | Node.js + Express |
 | Database | PostgreSQL 15 + PostGIS (geospatial radius queries) |
-| Cache / Queue | Redis 7 + Bull (delayed job queues, AOF-persisted) |
+| Cache | Redis 7 (OTP cache, AOF-persisted) |
+| Scheduled jobs | Cloudflare Workers (free cron triggers, no credit card) |
 | Auth | OTP via SSL Wireless (Bangladesh) + JWT |
 | Push notifications | Expo Push Notification Service (via expo-server-sdk) |
 | Masked calls | Twilio Proxy API |
@@ -98,9 +99,8 @@ Blood-Bridge/
 │   │   │   ├── verify.js         # NID upload (S3 presigned), admin approval
 │   │   │   ├── call.js           # Twilio Proxy session create/end
 │   │   │   └── caregivers.js     # Emergency caregiver CRUD (escalation contacts)
-│   │   ├── workers/
-│   │   │   ├── escalationWorker.js   # Bull: 15/30 min escalation jobs
-│   │   │   └── eligibilityWorker.js  # node-cron: daily 120-day reset + 15-min expiry
+│   │   ├── routes/
+│   │   │   └── cron.js               # Protected cron endpoints called by Cloudflare Worker
 │   │   ├── services/
 │   │   │   ├── smsService.js     # SSL Wireless wrapper (mock in dev)
 │   │   │   ├── fcmService.js     # Expo push notification wrapper (mock in dev)
@@ -124,6 +124,10 @@ Blood-Bridge/
 │   ├── init.sql                  # Enables PostGIS extension on first DB start
 │   ├── .env.example
 │   └── package.json
+│
+├── cloudflare-worker/
+│   ├── index.js                  # Cloudflare Worker: calls /api/cron/* on schedule
+│   └── wrangler.toml             # Cron triggers: every min, every 15 min, daily 00:00 UTC
 │
 ├── admin/                        # Next.js 15 admin dashboard (web)
 │   ├── app/
@@ -237,8 +241,6 @@ This starts PostgreSQL (with PostGIS), Redis (AOF persistence), MinIO (local S3)
 ```
 [DB] PostgreSQL connected
 [S3] Bucket "blood-bridge-nid-photos" ready
-[EligibilityWorker] Scheduled — runs daily at 06:00 AM BST (00:00 UTC)
-[EscalationWorker] Ready — listening for escalation jobs
 [Server] Listening on port 3000 (development)
 ```
 
@@ -632,9 +634,9 @@ All features work locally with zero real external accounts:
 | NID photo upload | MinIO running in Docker — view at `http://localhost:9001` (login: `minioadmin` / `minioadmin`) |
 | Masked calling | No Twilio creds → returns fake proxy numbers, logs to Docker |
 | PostGIS radius search | Runs fully in the postgres Docker container |
-| Eligibility cron | Runs inside the backend container at 06:00 UTC daily |
-| Request expiry cron | Runs every 15 minutes — marks OPEN requests EXPIRED after 6 hours |
-| Escalation queue | Redis + Bull running in Docker — jobs fire after 15 / 30 min |
+| Eligibility cron | In prod: Cloudflare Worker calls `/api/cron/eligibility` daily at 00:00 UTC. In dev: trigger manually with `curl -X POST http://localhost:3000/api/cron/eligibility -H "x-cron-secret: <CRON_SECRET>"` |
+| Request expiry cron | In prod: Cloudflare Worker calls `/api/cron/expiry` every 15 min. Trigger manually in dev the same way. |
+| Escalation (T+15m/T+30m) | In prod: Cloudflare Worker calls `/api/cron/escalate` every minute. Trigger manually in dev. |
 | Caregiver SMS | Mock mode → SMS text printed to Docker logs |
 
 ---
@@ -648,6 +650,7 @@ All features work locally with zero real external accounts:
 | `JWT_SECRET` | ✅ | *(set a random string)* | Signs JWT tokens. Generate: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"` |
 | `JWT_EXPIRES_IN` | — | `30d` | JWT expiry duration |
 | `ADMIN_SECRET` | ✅ | *(32+ chars in prod)* | Shared secret for admin endpoints (`x-admin-secret` header) |
+| `CRON_SECRET` | ✅ | *(32+ chars in prod)* | Shared secret for cron endpoints (`x-cron-secret` header). Must match the Cloudflare Worker env var. |
 | `ALLOWED_ORIGINS` | Prod | *(unset = allow all)* | Comma-separated CORS whitelist, e.g. `https://yourapp.com` |
 | `USE_MOCK_SMS` | — | `true` | `true` = print OTP to console; `false` = real SSL Wireless SMS |
 | `SSL_WIRELESS_API_KEY` | Prod | — | SSL Wireless API key |
@@ -718,8 +721,8 @@ The production stack runs entirely on **free tiers, no credit card required**:
 |---|---|---|
 | API (Express) | Vercel | Stateless HTTP routes |
 | Database | Neon | PostgreSQL + PostGIS (free 0.5 GB) |
-| Cache + Queue | Redis Cloud | Redis (free 30 MB) |
-| Worker | Koyeb | Bull queue + cron (always-on, free) |
+| Cache | Redis Cloud | Redis OTP cache (free 30 MB) |
+| Scheduled jobs | Cloudflare Workers | Cron triggers: escalation, expiry, eligibility (free, no card) |
 | File Storage | Backblaze B2 | NID photos (free 10 GB) |
 | SMS | SSL Wireless | OTP (mock mode until live) |
 | Push | Expo Push | Free, no credentials |
@@ -729,8 +732,27 @@ The production stack runs entirely on **free tiers, no credit card required**:
 1. **Neon** — create project (Singapore region) → enable PostGIS → run `prisma migrate deploy`
 2. **Redis Cloud** — create free database (Singapore) → copy `REDIS_URL`
 3. **Backblaze B2** — create private bucket → create App Key → copy credentials
-4. **Vercel** — import repo, root dir = `backend`, add all env vars → deploy
-5. **Koyeb** — create service from repo, `Dockerfile.worker`, add `DATABASE_URL` + `REDIS_URL` + `JWT_SECRET` → deploy
+4. **Vercel** — import repo, root dir = `backend`, add all env vars (including `CRON_SECRET`) → deploy
+5. **Cloudflare Worker** — deploy the cron scheduler (see below)
+
+### Cloudflare Worker setup
+
+```bash
+cd cloudflare-worker
+npm install -g wrangler
+wrangler login
+wrangler deploy
+```
+
+Then set the two environment variables in the Cloudflare dashboard:
+- **Workers & Pages → blood-bridge-cron → Settings → Variables and Secrets**
+  - `API_BASE_URL` = your Vercel deployment URL (e.g. `https://your-api.vercel.app`)
+  - `CRON_SECRET` = same value as `CRON_SECRET` in your Vercel environment variables
+
+The Worker will automatically call your API on three schedules:
+- Every minute → `POST /api/cron/escalate` (expands search radius at T+15m, SMS caregivers at T+30m)
+- Every 15 minutes → `POST /api/cron/expiry` (marks stale OPEN requests as EXPIRED)
+- Daily 00:00 UTC → `POST /api/cron/eligibility` (resets donors after 120-day wait)
 
 See `backend/.env.prod.example` for the full list of environment variables.
 
@@ -745,8 +767,8 @@ See `backend/.env.prod.example` for the full list of environment variables.
 | 3 | Auth routes (OTP + JWT) | `routes/auth.js`, `services/smsService.js` |
 | 4 | Donor profile routes | `routes/donors.js` |
 | 5 | Blood requests + PostGIS + Expo Push | `routes/requests.js`, `services/geoService.js`, `services/fcmService.js` |
-| 6 | Eligibility cron (120-day reset + expiry) | `workers/eligibilityWorker.js` |
-| 7 | Bull escalation queue | `workers/escalationWorker.js` |
+| 6 | Cron endpoints (eligibility reset + expiry + escalation) | `routes/cron.js` |
+| 7 | Cloudflare Worker cron scheduler | `cloudflare-worker/index.js`, `wrangler.toml` |
 | 8 | NID verification + S3 + admin | `routes/verify.js`, `services/s3Service.js` |
 | 9 | Twilio Proxy masked calling | `routes/call.js`, `services/twilioService.js` |
 | 10 | Caregiver management | `routes/caregivers.js` |
@@ -806,7 +828,12 @@ ipconfig | findstr "IPv4"
 2. Donor is outside the 5 km initial radius — move donor GPS coordinates closer to the hospital
 
 **Caregiver SMS not sending at T+30 min**
-→ In dev, check Docker logs for `[SMS MOCK]` lines. If no caregivers are registered, the escalation level 2 job fires but finds no contacts — add caregivers in the Profile tab.
+→ In production, escalation is triggered by the Cloudflare Worker calling `POST /api/cron/escalate`. In dev, trigger it manually:
+```bash
+curl -X POST http://localhost:3000/api/cron/escalate \
+  -H "x-cron-secret: $(grep CRON_SECRET backend/.env | cut -d= -f2)"
+```
+Check Docker logs for `[SMS MOCK]` lines. If no caregivers are registered, level 2 fires but finds no contacts — add caregivers in the Profile tab.
 
 **`relation "User" does not exist`**
 → Run migrations:

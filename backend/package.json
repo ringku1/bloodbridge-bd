@@ -5,7 +5,6 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "start:worker": "node src/worker.js",
     "dev": "nodemon src/server.js",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
@@ -20,7 +19,6 @@
     "@aws-sdk/s3-request-presigner": "^3.490.0",
     "@prisma/client": "^5.10.0",
     "axios": "^1.6.8",
-    "bull": "^4.12.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "expo-server-sdk": "^3.15.0",
@@ -32,7 +30,6 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^2.1.1",
-    "node-cron": "^3.0.3",
     "twilio": "^4.21.0"
   },
   "devDependencies": {

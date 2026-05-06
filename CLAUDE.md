@@ -22,7 +22,7 @@ A mobile-first blood donor app for Bangladesh that solves three real problems ex
 - **React Native** (Expo managed workflow)
 - **Zustand** for state management
 - **React Native Maps** + Google Maps API for geolocation
-- **Firebase Cloud Messaging (FCM)** for push notifications
+- **Expo Push Notification Service** for push notifications
 - **Axios** for HTTP requests
 
 ### Backend
@@ -30,23 +30,25 @@ A mobile-first blood donor app for Bangladesh that solves three real problems ex
 - **Node.js + Express**
 - **JWT** for auth tokens
 - **OTP via SMS** — SSL Wireless (Bangladesh SMS gateway)
-- **Bull** (Redis-backed job queue) for escalation scheduling
-- **node-cron** for the daily eligibility reset job
 - **Twilio Proxy API** for masked phone calls
-- **AWS S3** for NID photo storage (presigned URLs)
+- **Backblaze B2** (S3-compatible) for NID photo storage (presigned URLs)
 - **Multer** for file upload middleware
 
 ### Database
 
 - **PostgreSQL** with **PostGIS** extension for geospatial radius queries
-- **Redis** for Bull queues and caching
+- **Redis** for OTP caching (ioredis)
 - **Prisma ORM** for schema and queries
 
 ### Infrastructure
 
-- **Docker + docker-compose** (postgres, redis, backend as services)
+- **Docker + docker-compose** (postgres, redis, minio, backend as services) for local dev
+- **Vercel** — API (stateless Express serverless functions)
+- **Neon** — PostgreSQL + PostGIS (production)
+- **Redis Cloud** — Redis OTP cache (production)
+- **Cloudflare Workers** — cron scheduler (escalation, expiry, eligibility); free, no credit card
+- **Backblaze B2** — NID photo storage (production, free 10 GB, no credit card)
 - **GitHub Actions** for CI/CD
-- **Railway or AWS EC2** for hosting
 
 ---
 
@@ -61,13 +63,11 @@ A mobile-first blood donor app for Bangladesh that solves three real problems ex
 │   │   │   ├── donors.js        # Profile, availability, blood group
 │   │   │   ├── requests.js      # Post request, get nearby, update status
 │   │   │   ├── verify.js        # NID upload, verification status
-│   │   │   └── call.js          # Twilio Proxy session create/end
-│   │   ├── workers/
-│   │   │   ├── escalationWorker.js   # Bull worker: expand radius, SMS caregiver
-│   │   │   └── eligibilityWorker.js  # Daily cron: flip is_available = true
+│   │   │   ├── call.js          # Twilio Proxy session create/end
+│   │   │   └── cron.js          # Protected cron endpoints called by Cloudflare Worker
 │   │   ├── services/
 │   │   │   ├── smsService.js    # SSL Wireless wrapper
-│   │   │   ├── fcmService.js    # Firebase push notification wrapper
+│   │   │   ├── fcmService.js    # Expo push notification wrapper
 │   │   │   ├── twilioService.js # Proxy session management
 │   │   │   ├── s3Service.js     # Presigned URL generation
 │   │   │   └── geoService.js    # PostGIS query helpers
@@ -81,6 +81,10 @@ A mobile-first blood donor app for Bangladesh that solves three real problems ex
 │   ├── .env.example
 │   ├── docker-compose.yml
 │   └── package.json
+│
+├── cloudflare-worker/
+│   ├── index.js                 # Cloudflare Worker: calls /api/cron/* on schedule
+│   └── wrangler.toml            # Cron triggers: every min, every 15 min, daily 00:00 UTC
 │
 └── mobile/
     ├── src/
@@ -316,126 +320,44 @@ await prisma.user.update({
 });
 ```
 
-### Daily cron job (eligibilityWorker.js)
+### Cron endpoint (routes/cron.js)
 
-Runs at 6:00 AM every day. Finds all donors whose `eligibleAgainAt <= now` and flips `isAvailable = true`, then sends FCM push.
+Called by the Cloudflare Worker daily at 00:00 UTC (= 06:00 AM BST).
+Finds all donors whose `eligibleAgainAt <= now`, resets them, and sends Expo push notifications.
 
-```js
-const cron = require("node-cron");
-
-cron.schedule("0 6 * * *", async () => {
-  const donors = await prisma.user.findMany({
-    where: {
-      isAvailable: false,
-      eligibleAgainAt: { lte: new Date() },
-    },
-  });
-
-  await prisma.user.updateMany({
-    where: { id: { in: donors.map((d) => d.id) } },
-    data: { isAvailable: true },
-  });
-
-  for (const donor of donors) {
-    if (donor.fcmToken) {
-      await fcmService.send(donor.fcmToken, {
-        title: "You can donate again!",
-        body: "Your 120-day wait is over. You are now eligible to donate blood.",
-      });
-    }
-  }
-});
+```
+POST /api/cron/eligibility
+Header: x-cron-secret: <CRON_SECRET>
 ```
 
 ---
 
 ## Feature 3: Caregiver escalation system
 
-### Bull queue setup
+### How it works (no Bull queue)
 
-When a blood request is created, two delayed jobs are scheduled:
+Escalation is driven by a **Cloudflare Worker** calling `POST /api/cron/escalate` every minute.
+
+The cron handler queries the DB directly:
+- **Level 1** (T+15m): finds OPEN requests with `escalationLevel=0` and `createdAt <= now-15min`
+  → expands radius to 15km, notifies new donors
+- **Level 2** (T+30m): finds OPEN requests with `escalationLevel=1` and `createdAt <= now-30min`
+  → SMS all registered caregivers
+
+**Optimistic locking** prevents double-processing when the Worker fires multiple times close together:
 
 ```js
-const Queue = require("bull");
-const escalationQueue = new Queue("escalation", {
-  redis: { host: "redis", port: 6379 },
+// Only claim the row if escalationLevel is still what we expect
+const claimed = await prisma.bloodRequest.updateMany({
+  where: { id: request.id, escalationLevel: 0, status: 'OPEN' },
+  data:  { escalationLevel: 1, escalatedAt: now },
 });
-
-// After creating blood request:
-await escalationQueue.add({ requestId, level: 1 }, { delay: 15 * 60 * 1000 }); // 15 min
-await escalationQueue.add({ requestId, level: 2 }, { delay: 30 * 60 * 1000 }); // 30 min
+if (claimed.count === 0) continue; // already claimed by a concurrent invocation
 ```
 
-### Worker logic (escalationWorker.js)
+### Why escalation stops automatically when a donor accepts
 
-```js
-escalationQueue.process(async (job) => {
-  const { requestId, level } = job.data;
-
-  const request = await prisma.bloodRequest.findUnique({
-    where: { id: requestId },
-    include: { requester: { include: { caregivers: true } } }
-  });
-
-  // Skip if already matched or fulfilled
-  if (request.status !== 'OPEN') return;
-
-  if (level === 1) {
-    // Expand radius: find donors within 15km instead of 5km
-    const donors = await geoService.findNearbyDonors({
-      lat: request.latitude,
-      lng: request.longitude,
-      bloodGroup: request.bloodGroup,
-      radiusKm: 15,
-    });
-    await fcmService.sendToMany(donors.map(d => d.fcmToken), { ... });
-    await prisma.bloodRequest.update({
-      where: { id: requestId },
-      data: { escalationLevel: 1, escalatedAt: new Date() }
-    });
-  }
-
-  if (level === 2) {
-    // SMS caregivers
-    const caregivers = request.requester.caregivers;
-    for (const cg of caregivers) {
-      await smsService.send(cg.phone, `Urgent: ${request.requester.name} needs ${request.bloodGroup} blood at ${request.hospitalName}. No donor found yet. Please help.`);
-    }
-    await prisma.bloodRequest.update({
-      where: { id: requestId },
-      data: { escalationLevel: 2, escalatedAt: new Date() }
-    });
-  }
-});
-```
-
-### Cancelling jobs when donor accepts
-
-Store job IDs when scheduling so they can be removed:
-
-```js
-const job1 = await escalationQueue.add(
-  { requestId, level: 1 },
-  { delay: 900000 },
-);
-const job2 = await escalationQueue.add(
-  { requestId, level: 2 },
-  { delay: 1800000 },
-);
-
-// Store job IDs in Redis keyed by requestId
-await redis.set(
-  `escalation_jobs:${requestId}`,
-  JSON.stringify([job1.id, job2.id]),
-);
-
-// When donor accepts:
-const jobIds = JSON.parse(await redis.get(`escalation_jobs:${requestId}`));
-for (const id of jobIds) {
-  const job = await escalationQueue.getJob(id);
-  if (job) await job.remove();
-}
-```
+When a donor accepts, `requests.js` sets the request status to `MATCHED`. The cron query filters on `status: 'OPEN'`, so matched/fulfilled/expired requests are never picked up — no explicit cancellation step needed.
 
 ---
 
@@ -476,34 +398,37 @@ async function findNearbyDonors({ lat, lng, bloodGroup, radiusKm }) {
 
 ```env
 # Database
-DATABASE_URL=postgresql://user:password@localhost:5432/blooddonor
+DATABASE_URL=postgresql://user:password@postgres:5432/blooddonor
 
-# Redis
-REDIS_URL=redis://localhost:6379
+# Redis (OTP cache only — no Bull queues)
+REDIS_URL=redis://redis:6379
 
 # JWT
 JWT_SECRET=your_jwt_secret_here
 JWT_EXPIRES_IN=30d
 
+# Admin
+ADMIN_SECRET=your_admin_secret_here
+
+# Cron (Cloudflare Worker shared secret)
+CRON_SECRET=your_cron_secret_here
+
 # OTP (SSL Wireless - Bangladesh)
+USE_MOCK_SMS=true
 SSL_WIRELESS_API_KEY=your_api_key
 SSL_WIRELESS_SID=your_sid
-
-# Firebase
-FIREBASE_PROJECT_ID=your_project_id
-FIREBASE_PRIVATE_KEY=your_private_key
-FIREBASE_CLIENT_EMAIL=your_client_email
 
 # Twilio Proxy
 TWILIO_ACCOUNT_SID=your_account_sid
 TWILIO_AUTH_TOKEN=your_auth_token
 TWILIO_PROXY_SERVICE_SID=your_proxy_service_sid
 
-# AWS S3
-AWS_ACCESS_KEY_ID=your_key
-AWS_SECRET_ACCESS_KEY=your_secret
-AWS_REGION=ap-southeast-1
-AWS_S3_BUCKET=blood-donor-nid-photos
+# File storage (MinIO in dev, Backblaze B2 in prod)
+AWS_ACCESS_KEY_ID=minioadmin
+AWS_SECRET_ACCESS_KEY=minioadmin
+AWS_REGION=us-east-1
+AWS_S3_BUCKET=blood-bridge-nid-photos
+AWS_ENDPOINT=http://minio:9000
 ```
 
 ---
@@ -565,9 +490,9 @@ volumes:
 2. Prisma schema + migration + PostGIS extension
 3. Auth routes — OTP send/verify, JWT issue
 4. Donor profile — update blood group, location
-5. Blood request — create, PostGIS radius search, FCM push
-6. Eligibility cron — daily reset job
-7. Bull queue — escalation jobs, worker logic
+5. Blood request — create, PostGIS radius search, Expo push
+6. Cron routes — eligibility reset, request expiry, escalation (routes/cron.js)
+7. Cloudflare Worker — cron scheduler (cloudflare-worker/)
 8. NID verification — S3 presigned upload, admin status update
 9. Twilio Proxy — masked call session on donor accept
 10. Mobile app — screens wired to backend APIs

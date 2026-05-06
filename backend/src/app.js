@@ -20,6 +20,7 @@ const verifyRoutes     = require('./routes/verify');
 const callRoutes       = require('./routes/call');
 const caregiverRoutes  = require('./routes/caregivers');
 const adminRoutes      = require('./routes/admin');
+const cronRoutes       = require('./routes/cron');
 const errorHandler  = require('./middleware/errorHandler');
 const prisma        = require('./config/prisma');
 const redis         = require('./config/redis');
@@ -129,7 +130,8 @@ app.use('/api/requests',   requestRoutes);
 app.use('/api/verify',     verifyRoutes);
 app.use('/api/call',       callRoutes);
 app.use('/api/caregivers', caregiverRoutes);
-app.use('/api/admin',     adminRoutes);
+app.use('/api/admin',      adminRoutes);
+app.use('/api/cron',       cronRoutes);
 
 // ─── Error handler ────────────────────────────────────────────────────────────
 // MUST be last — Express only calls this when next(err) is invoked

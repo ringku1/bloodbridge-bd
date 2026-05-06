@@ -11,9 +11,7 @@
 const app    = require('./app');
 const prisma = require('./config/prisma');
 const redis  = require('./config/redis');
-const { startEligibilityWorker }  = require('./workers/eligibilityWorker');
-const { startEscalationWorker, escalationQueue } = require('./workers/escalationWorker');
-const { ensureBucketExists }      = require('./services/s3Service');
+const { ensureBucketExists } = require('./services/s3Service');
 
 const PORT = process.env.PORT || 3000;
 
@@ -56,9 +54,6 @@ async function startServer() {
 
     await ensureBucketExists();
 
-    startEligibilityWorker();
-    startEscalationWorker();
-
     const server = app.listen(PORT, () => {
       console.log(`[Server] Listening on port ${PORT}  (${process.env.NODE_ENV || 'development'})`);
     });
@@ -66,24 +61,19 @@ async function startServer() {
     // ─── Graceful shutdown ────────────────────────────────────────────────────
     // On SIGTERM / SIGINT:
     //   1. Stop accepting new HTTP connections
-    //   2. Pause the Bull queue (stop picking up new jobs)
-    //   3. Disconnect DB and Redis cleanly
+    //   2. Disconnect DB and Redis cleanly
     // A 30-second hard-kill ensures Docker doesn't wait forever.
     const shutdown = async (signal) => {
       console.log(`\n[Server] Received ${signal} — shutting down gracefully...`);
 
-      // Hard kill if graceful shutdown takes too long
       const forceExit = setTimeout(() => {
         console.error('[Server] Forced exit after 30s timeout');
         process.exit(1);
       }, 30_000);
-      forceExit.unref(); // don't keep process alive just for this timer
+      forceExit.unref();
 
       server.close(async () => {
         try {
-          // Pause queue — stops pulling new jobs; in-flight jobs finish naturally
-          if (escalationQueue) await escalationQueue.pause(true);
-
           await prisma.$disconnect();
           await redis.quit();
           console.log('[Server] Shutdown complete');

@@ -1,0 +1,29 @@
+# cloudflare-worker/wrangler.toml
+#
+# Cloudflare Workers configuration for the Blood Bridge cron scheduler.
+#
+# Deploy:
+#   npm install -g wrangler
+#   wrangler login
+#   wrangler deploy
+#
+# Set environment variables in Cloudflare dashboard:
+#   Workers & Pages → blood-bridge-cron → Settings → Variables and Secrets
+#   API_BASE_URL = https://your-api.vercel.app
+#   CRON_SECRET  = <same value as CRON_SECRET in Vercel>
+#
+# Test cron triggers locally:
+#   wrangler dev --test-scheduled
+#   curl "http://localhost:8787/__scheduled?cron=*+*+*+*+*"
+
+name             = "blood-bridge-cron"
+main             = "index.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+# Three cron schedules. The Worker reads event.cron to know which endpoint to call.
+crons = [
+  "* * * * *",     # every minute      → POST /api/cron/escalate
+  "*/15 * * * *",  # every 15 minutes  → POST /api/cron/expiry
+  "0 0 * * *",     # daily 00:00 UTC   → POST /api/cron/eligibility
+]

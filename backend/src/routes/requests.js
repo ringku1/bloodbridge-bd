@@ -5,12 +5,12 @@
 //   1. Requester POSTs a new request
 //      → PostGIS finds nearby verified donors within 5km
 //      → FCM push sent to all of them
-//      → Two Bull jobs scheduled (15 min escalation, 30 min caregiver SMS)
+//      → Escalation is handled by a Cloudflare Worker cron calling POST /api/cron/escalate
 //
 //   2. Donor GETs the request details and POSTs /accept
 //      → DonorResponse updated to ACCEPTED
 //      → Request status set to MATCHED
-//      → Escalation jobs cancelled
+//      → Escalation stops automatically — cron skips non-OPEN requests
 //
 //   3. Requester POSTs /confirm after donation
 //      → DonorResponse updated to DONATED
@@ -23,8 +23,6 @@ const prisma         = require('../config/prisma');
 const authMiddleware = require('../middleware/auth');
 const fcmService     = require('../services/fcmService');
 const geoService     = require('../services/geoService');
-const redis          = require('../config/redis');
-const { escalationQueue } = require('../workers/escalationWorker');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -96,13 +94,6 @@ router.post('/', async (req, res, next) => {
       );
     }
 
-    // Schedule escalation jobs (fail silently — doesn't block request creation)
-    try {
-      await scheduleEscalation(request.id);
-    } catch (err) {
-      console.error('[Escalation] Failed to schedule jobs:', err.message);
-    }
-
     res.status(201).json({
       request,
       donorsNotified: nearbyDonors.length,
@@ -163,7 +154,8 @@ router.get('/:id', async (req, res, next) => {
 });
 
 // ─── POST /api/requests/:id/accept ───────────────────────────────────────────
-// Donor accepts a blood request; cancels pending escalation jobs.
+// Donor accepts a blood request. Escalation stops automatically because the cron
+// skips requests whose status is no longer OPEN.
 router.post('/:id/accept', async (req, res, next) => {
   try {
     const request = await prisma.bloodRequest.findUnique({
@@ -189,12 +181,6 @@ router.post('/:id/accept', async (req, res, next) => {
         data:  { status: 'MATCHED' },
       }),
     ]);
-
-    try {
-      await cancelEscalation(request.id);
-    } catch (err) {
-      console.error('[Escalation] Failed to cancel jobs:', err.message);
-    }
 
     res.json({ message: 'You have accepted this request. Please proceed to the hospital.' });
   } catch (err) {
@@ -262,32 +248,5 @@ router.post('/:id/confirm', async (req, res, next) => {
     next(err);
   }
 });
-
-// ─── Escalation helpers ───────────────────────────────────────────────────────
-
-async function scheduleEscalation(requestId) {
-  const job1 = await escalationQueue.add({ requestId, level: 1 }, { delay: 15 * 60 * 1000 });
-  const job2 = await escalationQueue.add({ requestId, level: 2 }, { delay: 30 * 60 * 1000 });
-
-  await redis.set(
-    `escalation_jobs:${requestId}`,
-    JSON.stringify([job1.id, job2.id]),
-    'EX', 3600
-  );
-}
-
-async function cancelEscalation(requestId) {
-  const raw = await redis.get(`escalation_jobs:${requestId}`);
-  if (!raw) return;
-
-  const jobIds = JSON.parse(raw);
-
-  for (const id of jobIds) {
-    const job = await escalationQueue.getJob(id);
-    if (job) await job.remove();
-  }
-
-  await redis.del(`escalation_jobs:${requestId}`);
-}
 
 module.exports = router;
