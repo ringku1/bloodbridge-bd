@@ -54,7 +54,7 @@ app.use(cors({
       }
     : true, // dev: allow everything
   methods:      ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-secret'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-secret', 'x-cron-secret'],
   optionsSuccessStatus: 200,
 }));
 

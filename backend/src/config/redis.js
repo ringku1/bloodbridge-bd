@@ -2,9 +2,8 @@
 //
 // Exports a single shared Redis client (ioredis).
 //
-// Redis is used for two purposes in this app:
-//   1. OTP storage — temporary keys with TTL (e.g. otp:+8801234567890 → "123456")
-//   2. Bull job queues — escalation jobs (15-min and 30-min delayed jobs)
+// Redis is used for OTP storage — temporary keys with TTL (e.g. otp:+8801234567890 → "123456")
+// and for OTP attempt rate-limiting (otp_attempts:+8801234567890 → count).
 //
 // ioredis automatically reconnects on connection loss using exponential backoff.
 

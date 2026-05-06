@@ -20,7 +20,7 @@ const PORT = process.env.PORT || 3000;
 // start rather than running silently broken. Catches misconfigured deployments
 // before they serve real traffic.
 function validateEnvironment() {
-  const required = ['JWT_SECRET', 'DATABASE_URL', 'REDIS_URL'];
+  const required = ['JWT_SECRET', 'DATABASE_URL', 'REDIS_URL', 'CRON_SECRET'];
   const placeholders = ['change_this', 'your_', 'changeme', 'secret_here'];
 
   const missing = required.filter((k) => !process.env[k]);

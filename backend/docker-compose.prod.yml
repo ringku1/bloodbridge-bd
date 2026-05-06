@@ -1,11 +1,13 @@
 # docker-compose.prod.yml
 #
-# Production deployment — runs only the backend container.
+# Alternative production deployment — runs only the backend container on a VPS.
+# The primary deployment target is Vercel (see README Production Deployment section).
+#
 # PostgreSQL → Neon (managed, external)
 # Redis      → Redis Cloud (managed, external)
 # Storage    → Backblaze B2 (S3-compatible, external)
 #
-# Usage on EC2:
+# Usage (VPS):
 #   docker compose -f docker-compose.prod.yml up -d
 #   docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d  ← update
 

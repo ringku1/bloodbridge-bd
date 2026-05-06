@@ -52,6 +52,7 @@ jobs:
       REDIS_URL:    redis://localhost:6379
       JWT_SECRET:   ci_test_secret_not_for_production_use
       ADMIN_SECRET: ci_test_admin_secret_not_for_production
+      CRON_SECRET:  ci_test_cron_secret_not_for_production
 
     steps:
       - uses: actions/checkout@v4

@@ -47,11 +47,11 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 - When a donation is confirmed, donor is auto-locked (`isAvailable = false`)
 - A daily cron job at 6:00 AM BST checks who is eligible again and:
   - Flips `isAvailable = true`
-  - Sends a Firebase push notification: "You can donate again!"
+  - Sends an Expo push notification: "You can donate again!"
 - Blood requests auto-expire after 6 hours — a 15-minute cron marks stale OPEN requests as EXPIRED
 
 ### 3. Caregiver Escalation System
-- **T + 0 min**: Request created → 5 km radius → notify nearby verified donors via FCM push
+- **T + 0 min**: Request created → 5 km radius → notify nearby verified donors via Expo push
 - **T + 15 min**: No donor accepted → expand to 15 km → notify more donors
 - **T + 30 min**: Still no donor → SMS all registered caregivers of the requester
 - Jobs are cancelled immediately if a donor accepts
@@ -98,9 +98,8 @@ Blood-Bridge/
 │   │   │   ├── requests.js       # Create request, accept, confirm donation
 │   │   │   ├── verify.js         # NID upload (S3 presigned), admin approval
 │   │   │   ├── call.js           # Twilio Proxy session create/end
-│   │   │   └── caregivers.js     # Emergency caregiver CRUD (escalation contacts)
-│   │   ├── routes/
-│   │   │   └── cron.js               # Protected cron endpoints called by Cloudflare Worker
+│   │   │   ├── caregivers.js     # Emergency caregiver CRUD (escalation contacts)
+│   │   │   └── cron.js           # Protected cron endpoints called by Cloudflare Worker
 │   │   ├── services/
 │   │   │   ├── smsService.js     # SSL Wireless wrapper (mock in dev)
 │   │   │   ├── fcmService.js     # Expo push notification wrapper (mock in dev)
@@ -153,7 +152,7 @@ Blood-Bridge/
         ├── navigation/
         │   └── RootNavigation.js # Global nav ref for push notification deep links
         ├── hooks/
-        │   └── usePushNotifications.js  # FCM token registration + tap handler
+        │   └── usePushNotifications.js  # Expo push token registration + tap handler
         ├── store/
         │   ├── authStore.js      # Zustand: token + user (persisted to AsyncStorage)
         │   └── requestStore.js   # Zustand: blood requests (create, fetch)
@@ -228,7 +227,7 @@ AWS_ENDPOINT=http://minio:9000
 ```
 
 > `USE_MOCK_SMS=true` — OTP is printed to the server terminal instead of sending a real SMS.
-> Firebase / Twilio keys can be left blank in dev — both services run in mock mode automatically.
+> Twilio keys can be left blank in dev — Twilio runs in mock mode automatically (returns fake proxy numbers).
 
 ### Step 3 — Start all services via Docker
 
@@ -841,8 +840,11 @@ Check Docker logs for `[SMS MOCK]` lines. If no caregivers are registered, level
 cd backend && npx prisma migrate dev --name init
 ```
 
+**Server refuses to start with "Missing required environment variables" error**
+→ `JWT_SECRET`, `DATABASE_URL`, `REDIS_URL`, and `CRON_SECRET` must all be set. Check your `.env` file (local) or Vercel environment variables (production).
+
 **Server refuses to start with "placeholder values" error**
-→ In `NODE_ENV=production`, `JWT_SECRET` and `ADMIN_SECRET` must not contain words like `change_this` or `your_`. Generate real secrets and update `.env`.
+→ In `NODE_ENV=production`, `JWT_SECRET` and `ADMIN_SECRET` must not contain words like `change_this` or `your_`. Generate real secrets and update your environment variables.
 
 **Rate limit hit during testing (429 response)**
 → In development this is unlikely (100 req/15 min). If you hit the OTP limiter (5/min), wait 1 minute. The OTP phone-level lock (3 failures) resets after 15 minutes.
