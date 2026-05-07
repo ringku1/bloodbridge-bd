@@ -16,10 +16,11 @@
         "backgroundColor": "#DC2626"
       },
       "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "CAMERA",
-        "READ_MEDIA_IMAGES"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "ios": {
@@ -33,10 +34,18 @@
     "plugins": [
       [
         "expo-notifications",
-        { "color": "#DC2626" }
+        {
+          "color": "#DC2626"
+        }
       ],
       "expo-location",
       "expo-image-picker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d1e62360-c943-4051-b816-34e398092387"
+      }
+    },
+    "owner": "ringku"
   }
 }
