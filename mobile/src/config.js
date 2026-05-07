@@ -18,9 +18,9 @@
 //   Production:
 //     Your deployed backend URL, e.g. https://api.bloodbridge.app
 
-// export const API_BASE_URL = 'http://10.0.2.2:3000/api'; // Android emulator
-export const API_BASE_URL = 'http://192.168.0.112:3000/api'; // physical device on same WiFi
-// export const API_BASE_URL = 'https://api.bloodbridge.app/api'; // production
+// export const API_BASE_URL = 'http://10.0.2.2:3000/api';        // Android emulator
+// export const API_BASE_URL = 'http://192.168.0.112:3000/api';   // physical device on same WiFi
+export const API_BASE_URL = 'https://blood-bridge-dev.vercel.app/api'; // production
 
 // ─── Brand colors ─────────────────────────────────────────────────────────────
 export const COLORS = {
