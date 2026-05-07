@@ -8,24 +8,24 @@
     "ios": "expo start --ios"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "2.1.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
     "axios": "^1.7.9",
-    "expo": "~54.0.0",
-    "expo-image-picker": "~16.1.4",
-    "expo-location": "~18.1.5",
-    "expo-notifications": "~0.31.5",
-    "expo-status-bar": "~2.2.3",
-    "react": "19.0.0",
-    "react-native": "0.79.6",
-    "react-native-safe-area-context": "5.4.0",
-    "react-native-screens": "~4.11.1",
+    "expo": "~54.0.34",
+    "expo-image-picker": "~17.0.11",
+    "expo-location": "~19.0.8",
+    "expo-notifications": "~0.32.17",
+    "expo-status-bar": "~3.0.9",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
-    "babel-preset-expo": "~13.0.0"
+    "babel-preset-expo": "~54.0.10"
   }
 }

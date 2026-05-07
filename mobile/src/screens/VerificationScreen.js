@@ -69,7 +69,7 @@ export default function VerificationScreen() {
 
   async function handleUpload() {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality:    0.8,
       allowsEditing: false,
     });

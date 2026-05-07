@@ -22,9 +22,10 @@ import { navigate } from '../navigation/RootNavigation';
 // Show notification banners even when the app is in the foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge:  false,
+    shouldShowBanner: true,  // renamed from shouldShowAlert in expo-notifications 0.29+
+    shouldShowAlert:  true,  // keep for backwards compat with older Expo Go versions
+    shouldPlaySound:  true,
+    shouldSetBadge:   false,
   }),
 });
 
