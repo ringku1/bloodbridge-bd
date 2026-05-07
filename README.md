@@ -38,7 +38,7 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 
 ### 1. Verified Donor + Masked Contact
 - OTP via SMS (SSL Wireless) for phone auth
-- NID photo uploaded directly to AWS S3 via presigned URL
+- NID photo uploaded to S3-compatible storage (Backblaze B2 in production, MinIO in local dev) via presigned URL
 - Admin approves via a protected API call
 - When donor accepts a request, Twilio Proxy creates two temporary phone numbers — neither party ever sees the other's real number
 - Both the donor and the requester can initiate the call from their respective screens
@@ -54,7 +54,7 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 - **T + 0 min**: Request created → 5 km radius → notify nearby verified donors via Expo push
 - **T + 15 min**: No donor accepted → expand to 15 km → notify more donors
 - **T + 30 min**: Still no donor → SMS all registered caregivers of the requester
-- Jobs are cancelled immediately if a donor accepts
+- Escalation stops automatically when a donor accepts — the cron skips any request that is no longer OPEN
 - Caregivers are managed in the app (up to 5 per user, ordered by priority)
 
 ---
@@ -126,7 +126,8 @@ Blood-Bridge/
 │
 ├── cloudflare-worker/
 │   ├── index.js                  # Cloudflare Worker: calls /api/cron/* on schedule
-│   └── wrangler.toml             # Cron triggers: every min, every 15 min, daily 00:00 UTC
+│   ├── wrangler.toml             # Cron triggers: every min, every 15 min, daily 00:00 UTC
+│   └── package.json              # Local wrangler@3 install (compatible with Node 18+)
 │
 ├── admin/                        # Next.js 15 admin dashboard (web)
 │   ├── app/
@@ -219,6 +220,7 @@ DATABASE_URL=postgresql://user:password@postgres:5432/blooddonor
 REDIS_URL=redis://redis:6379
 JWT_SECRET=dev_secret_change_in_production
 ADMIN_SECRET=dev_admin_secret_change_in_production
+CRON_SECRET=dev_cron_secret_change_in_production
 USE_MOCK_SMS=true
 NODE_ENV=development
 AWS_ACCESS_KEY_ID=minioadmin
@@ -666,7 +668,7 @@ All features work locally with zero real external accounts:
 | `PORT` | — | `3000` | Server port |
 | `NODE_ENV` | — | `development` | `development` or `production` |
 
-> **Production startup validation:** The server refuses to start if `DATABASE_URL`, `REDIS_URL`, or `JWT_SECRET` are missing. In `NODE_ENV=production`, it also rejects placeholder values and enforces `ADMIN_SECRET` ≥ 32 characters.
+> **Production startup validation:** The server refuses to start if `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, or `CRON_SECRET` are missing. In `NODE_ENV=production`, it also rejects placeholder values and enforces `ADMIN_SECRET` ≥ 32 characters.
 
 ---
 
@@ -738,9 +740,9 @@ The production stack runs entirely on **free tiers, no credit card required**:
 
 ```bash
 cd cloudflare-worker
-npm install -g wrangler
-wrangler login
-wrangler deploy
+npm install          # installs wrangler 3 locally (works with Node 18+)
+npx wrangler login   # opens browser to authenticate with Cloudflare
+npx wrangler deploy
 ```
 
 Then set the two environment variables in the Cloudflare dashboard:
