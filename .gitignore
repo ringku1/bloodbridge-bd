@@ -16,3 +16,6 @@ npm-debug.log*
 # Secrets — never commit these
 .env
 *.pem
+
+# Cloudflare Worker
+cloudflare-worker/node_modules/
