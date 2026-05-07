@@ -90,11 +90,22 @@ const adminLimiter = rateLimit({
   message:         { error: 'Too many admin requests — please try again in 15 minutes.' },
 });
 
+// Tight limiter for Twilio Proxy call routes: 10 session creates per 15 minutes per IP.
+// Twilio Proxy sessions cost money and are high-value abuse targets.
+const callLimiter = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             10,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Too many call requests — please try again in 15 minutes.' },
+});
+
 app.use('/api/', apiLimiter);
 app.use('/api/auth/send-otp',   otpLimiter);
 app.use('/api/auth/verify-otp', otpLimiter);
 app.use('/api/admin',           adminLimiter);
 app.use('/api/verify/admin',    adminLimiter);
+app.use('/api/call',            callLimiter);
 
 // ─── Request logging ──────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {

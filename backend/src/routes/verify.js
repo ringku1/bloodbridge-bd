@@ -129,6 +129,40 @@ router.get('/status', authMiddleware, async (req, res, next) => {
   }
 });
 
+// ─── GET /api/verify/admin/pending ───────────────────────────────────────────
+// Admin endpoint — list all users with PENDING verification status.
+// Useful for reviewing NID photos in batch.
+// IMPORTANT: this static route MUST be defined before PUT /admin/:userId so Express
+// does not interpret the literal string "pending" as a :userId parameter.
+router.get('/admin/pending', adminAuth, async (req, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { verifiedStatus: 'PENDING' },
+      select: {
+        id:          true,
+        name:        true,
+        nidPhotoUrl: true,
+        createdAt:   true,
+      },
+      orderBy: { createdAt: 'asc' }, // oldest submissions first (FIFO review)
+    });
+
+    // Generate view URLs for each photo (15-min presigned)
+    const usersWithUrls = await Promise.all(
+      users.map(async (u) => ({
+        ...u,
+        nidPhotoViewUrl: u.nidPhotoUrl
+          ? await s3Service.generateViewUrl(u.nidPhotoUrl)
+          : null,
+      }))
+    );
+
+    res.json({ count: users.length, users: usersWithUrls });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── PUT /api/verify/admin/:userId ────────────────────────────────────────────
 // Admin endpoint — update a user's verification status.
 // Protected by x-admin-secret header (see middleware/adminAuth.js).
@@ -166,7 +200,7 @@ router.put('/admin/:userId', adminAuth, async (req, res, next) => {
     // Notify the donor so the app updates without requiring a manual refresh
     if (user.fcmToken) {
       const messages = {
-        VERIFIED:   { title: '✅ Identity Verified!', body: 'Your NID has been approved. You now appear in blood request search results.' },
+        VERIFIED:   { title: 'Identity Verified!', body: 'Your NID has been approved. You now appear in blood request search results.' },
         UNVERIFIED: { title: 'Verification Rejected', body: 'Your NID photo could not be verified. Please re-upload a clearer photo.' },
         PENDING:    null,
       };
@@ -184,38 +218,6 @@ router.put('/admin/:userId', adminAuth, async (req, res, next) => {
       user,
       nidPhotoViewUrl,
     });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ─── GET /api/verify/admin/pending ───────────────────────────────────────────
-// Admin endpoint — list all users with PENDING verification status.
-// Useful for reviewing NID photos in batch.
-router.get('/admin/pending', adminAuth, async (req, res, next) => {
-  try {
-    const users = await prisma.user.findMany({
-      where: { verifiedStatus: 'PENDING' },
-      select: {
-        id:          true,
-        name:        true,
-        nidPhotoUrl: true,
-        createdAt:   true,
-      },
-      orderBy: { createdAt: 'asc' }, // oldest submissions first (FIFO review)
-    });
-
-    // Generate view URLs for each photo (15-min presigned)
-    const usersWithUrls = await Promise.all(
-      users.map(async (u) => ({
-        ...u,
-        nidPhotoViewUrl: u.nidPhotoUrl
-          ? await s3Service.generateViewUrl(u.nidPhotoUrl)
-          : null,
-      }))
-    );
-
-    res.json({ count: users.length, users: usersWithUrls });
   } catch (err) {
     next(err);
   }

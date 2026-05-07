@@ -67,12 +67,15 @@ model User {
   isAvailable    Boolean        @default(true)
   lastDonatedAt  DateTime?
   eligibleAgainAt DateTime?     // set to lastDonatedAt + 120 days on donation confirmation
-  fcmToken       String?        // Firebase Cloud Messaging device token for push notifications
+  fcmToken       String?        // Expo push notification token — registered via PUT /api/donors/fcm-token
   createdAt      DateTime       @default(now())
 
   requests   BloodRequest[]  @relation("RequesterRequests")
   responses  DonorResponse[]
   caregivers Caregiver[]
+
+  @@index([verifiedStatus])                  // admin pending list + geo search pre-filter
+  @@index([isAvailable, verifiedStatus])     // PostGIS query WHERE clause
 }
 
 model BloodRequest {
@@ -91,14 +94,18 @@ model BloodRequest {
   createdAt      DateTime      @default(now())
 
   responses DonorResponse[]
+
+  @@index([status])                          // cron expiry/escalation query
+  @@index([requesterId])                     // GET /api/requests/active
+  @@index([status, escalationLevel])         // cron escalation level filter
 }
 
 model DonorResponse {
   id                 String         @id @default(uuid())
   requestId          String
-  request            BloodRequest   @relation(fields: [requestId], references: [id])
+  request            BloodRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
   donorId            String
-  donor              User           @relation(fields: [donorId], references: [id])
+  donor              User           @relation(fields: [donorId], references: [id], onDelete: Cascade)
   status             ResponseStatus @default(NOTIFIED)
   proxySessionId     String?        // Twilio Proxy session SID
   notifiedAt         DateTime       @default(now())
@@ -106,13 +113,17 @@ model DonorResponse {
   donatedConfirmedAt DateTime?
 
   @@unique([requestId, donorId])  // a donor can only respond once per request
+  @@index([donorId])              // donor's history queries
+  @@index([requestId])            // request's responses list
 }
 
 model Caregiver {
   id       String @id @default(uuid())
   userId   String
-  user     User   @relation(fields: [userId], references: [id])
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   name     String
   phone    String  // E.164 format
   priority Int    @default(1)  // lower number = notified first
+
+  @@unique([userId, phone])  // prevent duplicate caregiver numbers per user
 }

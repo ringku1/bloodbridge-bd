@@ -19,7 +19,7 @@ router.use(authMiddleware);
 
 const caregiverSchema = Joi.object({
   name:     Joi.string().trim().min(2).max(100).required(),
-  phone:    Joi.string().pattern(/^\+880[1-9]\d{9}$/).required().messages({
+  phone:    Joi.string().pattern(/^\+8801[3-9]\d{8}$/).required().messages({
     'string.pattern.base': 'Phone must be a valid Bangladeshi number in E.164 format: +8801XXXXXXXXX',
   }),
   priority: Joi.number().integer().min(1).max(10).default(1),
