@@ -63,7 +63,7 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 
 | Layer | Technology |
 |---|---|
-| Mobile | React Native 0.79 (Expo SDK 54 managed), Zustand, Axios |
+| Mobile | React Native 0.81 (Expo SDK 54 managed), Zustand, Axios |
 | Backend | Node.js + Express |
 | Database | PostgreSQL 15 + PostGIS (geospatial radius queries) |
 | Cache | Redis 7 (OTP cache, AOF-persisted) |
@@ -280,15 +280,17 @@ npm install
 
 ### Step 2 — Configure the API URL
 
-Open [mobile/src/config.js](mobile/src/config.js) and set the right URL:
+Open [mobile/src/config.js](mobile/src/config.js) and uncomment the right URL:
 
 ```js
 // Physical Android/iOS device on the same WiFi as your computer
-// Find your PC's IP: ifconfig (Linux/Mac) or ipconfig (Windows)
-export const API_BASE_URL = 'http://192.168.0.110:3000/api'; // ← replace with your IP
+// export const API_BASE_URL = 'http://192.168.0.110:3000/api'; // ← replace with your LAN IP
 
 // Android emulator
 // export const API_BASE_URL = 'http://10.0.2.2:3000/api';
+
+// Production (default — points to live Vercel API)
+export const API_BASE_URL = 'https://blood-bridge-dev.vercel.app/api';
 ```
 
 ### Step 3 — Start Expo
@@ -296,6 +298,16 @@ export const API_BASE_URL = 'http://192.168.0.110:3000/api'; // ← replace with
 ```bash
 ./node_modules/expo/bin/cli start --clear
 ```
+
+### Step 4 — Build a production APK (Android)
+
+```bash
+npm install -g eas-cli   # requires Node 20+
+eas login
+eas build --platform android --profile preview
+```
+
+EAS builds on Expo's servers (~15 min). The `preview` profile outputs a `.apk` you can install directly on any Android device. Download the link from [expo.dev/accounts/ringku/projects/blood-bridge/builds](https://expo.dev/accounts/ringku/projects/blood-bridge/builds).
 
 | Target | How | Requirement |
 |---|---|---|
@@ -714,6 +726,18 @@ eas init   # adds projectId to app.json automatically
 
 ---
 
+## Live Production URLs
+
+| Service | URL |
+|---|---|
+| API | https://blood-bridge-dev.vercel.app |
+| Admin Dashboard | https://blood-bridge-admin-dev.vercel.app |
+| Cron Worker | blood-bridge-cron.ringku.workers.dev |
+
+Health check: `GET https://blood-bridge-dev.vercel.app/health/ready`
+
+---
+
 ## Production Deployment
 
 The production stack runs entirely on **free tiers, no credit card required**:
@@ -755,7 +779,7 @@ The Worker will automatically call your API on three schedules:
 - Every 15 minutes → `POST /api/cron/expiry` (marks stale OPEN requests as EXPIRED)
 - Daily 00:00 UTC → `POST /api/cron/eligibility` (resets donors after 120-day wait)
 
-See `backend/.env.prod.example` for the full list of environment variables.
+See [Environment Variables](#environment-variables) for the full list of variables to add in Vercel.
 
 ---
 
