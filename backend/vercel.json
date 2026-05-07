@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "buildCommand": "npx prisma migrate deploy",
   "builds": [
     {
       "src": "src/app.js",
