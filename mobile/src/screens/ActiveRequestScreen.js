@@ -15,12 +15,14 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import api from '../services/api';
 import { useRequestStore } from '../store/requestStore';
 import { COLORS } from '../config';
 import { formatBloodGroup, formatRequestStatus, timeAgo } from '../utils/formatters';
 
 export default function ActiveRequestScreen() {
+  const navigation = useNavigation();
   const { activeRequests, fetchActiveRequests, loading } = useRequestStore();
   const [confirmingId, setConfirmingId] = useState(null);
   const [callingId, setCallingId]       = useState(null);
@@ -214,6 +216,16 @@ export default function ActiveRequestScreen() {
                       }
                     </TouchableOpacity>
                   )}
+                  <TouchableOpacity
+                    style={styles.chatBtn}
+                    onPress={() => navigation.navigate('Chat', {
+                      requestId: req.id,
+                      otherName: response.donor?.name || 'Donor',
+                    })}
+                  >
+                    <Text style={styles.chatBtnText}>💬</Text>
+                  </TouchableOpacity>
+
                   {!reveal.requesterRevealed && (
                     <TouchableOpacity
                       style={styles.revealBtn}
@@ -339,6 +351,15 @@ const styles = StyleSheet.create({
   emptyIcon:     { fontSize: 48, marginBottom: 16 },
   emptyTitle:    { fontSize: 18, fontWeight: '700', color: COLORS.text },
   emptySubtitle: { fontSize: 14, color: COLORS.textMuted, marginTop: 4 },
+
+  chatBtn: {
+    borderWidth:  1,
+    borderColor:  COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical:   8,
+  },
+  chatBtnText: { fontSize: 16 },
 
   revealBtn: {
     borderWidth:  1,

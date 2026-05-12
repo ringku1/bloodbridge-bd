@@ -13,11 +13,13 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import api from '../services/api';
 import { COLORS } from '../config';
 import { formatBloodGroup, formatRequestStatus, timeAgo } from '../utils/formatters';
 
 export default function DonorAcceptedScreen() {
+  const navigation = useNavigation();
   const [responses, setResponses] = useState([]);
   const [loading, setLoading]     = useState(true);
   // Track active call sessions locally: { [responseId]: sessionId }
@@ -155,6 +157,17 @@ export default function DonorAcceptedScreen() {
         {/* Call actions — only when request is still MATCHED (not yet fulfilled) */}
         {!isDonated && req.status === 'MATCHED' && (
           <View style={styles.actions}>
+            {/* Chat button — always available while matched */}
+            <TouchableOpacity
+              style={styles.chatBtn}
+              onPress={() => navigation.navigate('Chat', {
+                requestId: item.requestId,
+                otherName: req.requester?.name || 'Requester',
+              })}
+            >
+              <Text style={styles.chatBtnText}>💬  Chat with Requester</Text>
+            </TouchableOpacity>
+
             {sessionActive ? (
               <TouchableOpacity
                 style={styles.endCallBtn}
@@ -269,7 +282,16 @@ const styles = StyleSheet.create({
   },
   donatedText: { fontSize: 13, color: '#15803D', fontWeight: '600' },
 
-  actions: { borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12 },
+  actions: { borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12, gap: 8 },
+
+  chatBtn: {
+    borderWidth:  1,
+    borderColor:  COLORS.border,
+    borderRadius: 10,
+    padding:      12,
+    alignItems:   'center',
+  },
+  chatBtnText: { color: COLORS.text, fontWeight: '600', fontSize: 14 },
 
   callBtn: {
     borderWidth:  1,

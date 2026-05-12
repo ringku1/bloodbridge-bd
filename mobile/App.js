@@ -13,7 +13,8 @@
 //     │     ├── Request  → RequestBloodScreen → ActiveRequestScreen
 //     │     ├── Donate   → DonorAcceptedScreen  (donor tracks accepted requests + call)
 //     │     └── Profile  → DonorProfileScreen → VerificationScreen → CaregiversScreen
-//     └── DonorRequest   → DonorRequestScreen  (reached via push notification tap)
+//     ├── DonorRequest   → DonorRequestScreen  (reached via push notification tap)
+//     └── Chat           → ChatScreen          (1-hour temp chat, donor ↔ requester)
 
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -36,6 +37,7 @@ import VerificationScreen   from './src/screens/VerificationScreen';
 import DonorRequestScreen   from './src/screens/DonorRequestScreen';
 import DonorAcceptedScreen  from './src/screens/DonorAcceptedScreen';
 import CaregiversScreen     from './src/screens/CaregiversScreen';
+import ChatScreen           from './src/screens/ChatScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -109,6 +111,11 @@ function RootNavigator() {
         name="DonorRequest"
         component={DonorRequestScreen}
         options={{ headerShown: true, title: 'Blood Request', ...stackOptions }}
+      />
+      <Stack.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={{ headerShown: true, ...stackOptions }}
       />
     </Stack.Navigator>
   );

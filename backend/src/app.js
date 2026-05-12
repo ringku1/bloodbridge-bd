@@ -18,6 +18,7 @@ const donorRoutes      = require('./routes/donors');
 const requestRoutes    = require('./routes/requests');
 const verifyRoutes     = require('./routes/verify');
 const callRoutes       = require('./routes/call');
+const chatRoutes       = require('./routes/chat');
 const caregiverRoutes  = require('./routes/caregivers');
 const adminRoutes      = require('./routes/admin');
 const cronRoutes       = require('./routes/cron');
@@ -100,12 +101,22 @@ const callLimiter = rateLimit({
   message:         { error: 'Too many call requests — please try again in 15 minutes.' },
 });
 
+// Chat limiter: 60 messages per minute per IP.
+const chatLimiter = rateLimit({
+  windowMs:        60 * 1000,
+  max:             60,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message:         { error: 'Sending too fast — slow down.' },
+});
+
 app.use('/api/', apiLimiter);
 app.use('/api/auth/send-otp',   otpLimiter);
 app.use('/api/auth/verify-otp', otpLimiter);
 app.use('/api/admin',           adminLimiter);
 app.use('/api/verify/admin',    adminLimiter);
 app.use('/api/call',            callLimiter);
+app.use('/api/chat',            chatLimiter);
 
 // ─── Request logging ──────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {
@@ -140,6 +151,7 @@ app.use('/api/donors',     donorRoutes);
 app.use('/api/requests',   requestRoutes);
 app.use('/api/verify',     verifyRoutes);
 app.use('/api/call',       callRoutes);
+app.use('/api/chat',       chatRoutes);
 app.use('/api/caregivers', caregiverRoutes);
 app.use('/api/admin',      adminRoutes);
 app.use('/api/cron',       cronRoutes);
