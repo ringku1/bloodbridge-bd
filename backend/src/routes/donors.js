@@ -204,7 +204,7 @@ router.get('/my-responses', async (req, res, next) => {
       include: {
         request: {
           include: {
-            requester: { select: { id: true, name: true, district: true } },
+            requester: { select: { id: true, name: true, district: true, phone: true } },
           },
         },
       },

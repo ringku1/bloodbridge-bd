@@ -115,7 +115,7 @@ router.get('/active', async (req, res, next) => {
       include: {
         responses: {
           include: {
-            donor: { select: { id: true, name: true, verifiedStatus: true } },
+            donor: { select: { id: true, name: true, verifiedStatus: true, phone: true } },
           },
         },
       },
