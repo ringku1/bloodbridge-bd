@@ -134,7 +134,7 @@ router.get('/status', authMiddleware, async (req, res, next) => {
 // Useful for reviewing NID photos in batch.
 // IMPORTANT: this static route MUST be defined before PUT /admin/:userId so Express
 // does not interpret the literal string "pending" as a :userId parameter.
-router.get('/admin/pending', adminAuth, async (req, res, next) => {
+router.get('/admin/pending', adminAuth, async (_req, res, next) => {
   try {
     const users = await prisma.user.findMany({
       where: { verifiedStatus: 'PENDING' },
@@ -147,17 +147,7 @@ router.get('/admin/pending', adminAuth, async (req, res, next) => {
       orderBy: { createdAt: 'asc' }, // oldest submissions first (FIFO review)
     });
 
-    // Generate view URLs for each photo (15-min presigned)
-    const usersWithUrls = await Promise.all(
-      users.map(async (u) => ({
-        ...u,
-        nidPhotoViewUrl: u.nidPhotoUrl
-          ? await s3Service.generateViewUrl(u.nidPhotoUrl)
-          : null,
-      }))
-    );
-
-    res.json({ count: users.length, users: usersWithUrls });
+    res.json({ count: users.length, users });
   } catch (err) {
     next(err);
   }
@@ -218,6 +208,36 @@ router.put('/admin/:userId', adminAuth, async (req, res, next) => {
       user,
       nidPhotoViewUrl,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /api/verify/admin/:userId/nid-photo ─────────────────────────────────
+// Proxies the NID photo bytes through the API so the admin dashboard can load
+// the image without needing a publicly-accessible S3 URL.
+//
+// Why proxy instead of presigned URL?
+//   generateViewUrl embeds the S3 host in the URL. In production Vercel, the
+//   AWS_ENDPOINT / MINIO_PUBLIC_URL env vars may point to a local Docker host
+//   (http://minio:9000) which is unreachable from a browser. Proxying uses the
+//   internal s3 client, which always has the correct backend-side endpoint.
+router.get('/admin/:userId/nid-photo', adminAuth, async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where:  { id: req.params.userId },
+      select: { nidPhotoUrl: true },
+    });
+
+    if (!user?.nidPhotoUrl) {
+      return res.status(404).json({ error: 'No NID photo on file for this user.' });
+    }
+
+    const result = await s3Service.getObjectResult(user.nidPhotoUrl);
+
+    res.setHeader('Content-Type',  result.ContentType  || 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    result.Body.pipe(res);
   } catch (err) {
     next(err);
   }

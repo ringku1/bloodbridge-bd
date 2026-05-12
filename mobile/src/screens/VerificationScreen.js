@@ -20,7 +20,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
-import { API_BASE_URL } from '../config';
 import { COLORS } from '../config';
 
 // Status display config
@@ -68,6 +67,17 @@ export default function VerificationScreen() {
   }
 
   async function handleUpload() {
+    // Explicitly request permission on Android before opening the picker.
+    // On iOS this is handled automatically by the OS on first access.
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission required',
+        'Please allow access to your photo library in Settings to upload your NID photo.'
+      );
+      return;
+    }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality:    0.8,
@@ -80,8 +90,9 @@ export default function VerificationScreen() {
     setUploading(true);
 
     try {
-      // Build multipart form — React Native handles the file:// URI natively
-      // at the networking layer, which is far more reliable than fetch+blob+PUT.
+      // Use the api axios client so the JWT token and 60s timeout interceptors
+      // apply automatically. React Native handles the multipart boundary when
+      // Content-Type is set to multipart/form-data.
       const formData = new FormData();
       formData.append('photo', {
         uri:  asset.uri,
@@ -89,21 +100,11 @@ export default function VerificationScreen() {
         name: 'nid.jpg',
       });
 
-      // POST to our backend; backend uploads to MinIO over the internal Docker
-      // network, avoiding direct mobile→MinIO connectivity entirely.
-      // Use fetch (not axios) for multipart uploads — React Native's native
-      // fetch sets the correct Content-Type with boundary automatically.
-      const token = useAuthStore.getState().token;
-      const uploadRes = await fetch(`${API_BASE_URL}/verify/upload`, {
-        method:  'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body:    formData,
+      const uploadRes = await api.post('/verify/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        transformRequest: (data) => data, // prevent axios from JSON-serializing FormData
       });
-      if (!uploadRes.ok) {
-        const errData = await uploadRes.json();
-        throw new Error(errData.error || 'Upload failed');
-      }
-      const { s3Key } = await uploadRes.json();
+      const { s3Key } = uploadRes.data;
 
       // Tell the backend which key to store against this user's profile.
       await api.post('/verify/submit', { s3Key });

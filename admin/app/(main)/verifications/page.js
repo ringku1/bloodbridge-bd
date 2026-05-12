@@ -5,10 +5,11 @@ import api from '@/lib/api';
 import Badge from '@/components/Badge';
 
 export default function VerificationsPage() {
-  const [users,   setUsers]   = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [photo,   setPhoto]   = useState(null); // { url, name }
-  const [working, setWorking] = useState(null); // userId being approved/rejected
+  const [users,        setUsers]        = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [photo,        setPhoto]        = useState(null);   // { url, name }
+  const [working,      setWorking]      = useState(null);   // userId being approved/rejected
+  const [loadingPhoto, setLoadingPhoto] = useState(null);   // userId whose photo is loading
 
   const fetchPending = useCallback(async () => {
     setLoading(true);
@@ -21,6 +22,22 @@ export default function VerificationsPage() {
   }, []);
 
   useEffect(() => { fetchPending(); }, [fetchPending]);
+
+  async function handleViewPhoto(user) {
+    setLoadingPhoto(user.id);
+    try {
+      // Fetch image bytes through the API (sends x-admin-secret header automatically).
+      // This avoids presigned URLs that embed the S3 host — which breaks in production
+      // when AWS_ENDPOINT / MINIO_PUBLIC_URL point to a local Docker address.
+      const res = await api.get(`/verify/admin/${user.id}/nid-photo`, { responseType: 'blob' });
+      const url  = URL.createObjectURL(res.data);
+      setPhoto({ url, name: user.name });
+    } catch {
+      alert('Could not load photo. The file may not have been uploaded yet.');
+    } finally {
+      setLoadingPhoto(null);
+    }
+  }
 
   async function handleDecision(userId, status) {
     setWorking(userId);
@@ -68,12 +85,13 @@ export default function VerificationsPage() {
 
               {/* Actions */}
               <div className="flex items-center gap-3 flex-shrink-0">
-                {user.nidPhotoViewUrl && (
+                {user.nidPhotoUrl && (
                   <button
-                    onClick={() => setPhoto({ url: user.nidPhotoViewUrl, name: user.name })}
-                    className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+                    onClick={() => handleViewPhoto(user)}
+                    disabled={loadingPhoto === user.id}
+                    className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors"
                   >
-                    View Photo
+                    {loadingPhoto === user.id ? 'Loading…' : 'View Photo'}
                   </button>
                 )}
                 <button
@@ -115,7 +133,7 @@ export default function VerificationsPage() {
               alt="NID"
               className="w-full rounded-lg object-contain max-h-96"
             />
-            <p className="text-xs text-gray-400 mt-2 text-center">This link expires in 7 days</p>
+            <p className="text-xs text-gray-400 mt-2 text-center">Served securely through the API</p>
           </div>
         </div>
       )}

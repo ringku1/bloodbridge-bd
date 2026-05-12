@@ -113,4 +113,13 @@ async function generateViewUrl(s3Key) {
   return getSignedUrl(s3Public, command, { expiresIn: 7 * 24 * 60 * 60 });
 }
 
-module.exports = { ensureBucketExists, generateUploadUrl, generateViewUrl, uploadBuffer };
+// Fetch an object from S3 and return the raw result (Body stream + ContentType).
+// Used by the admin proxy endpoint to serve NID photos directly through the API,
+// avoiding presigned URLs that embed the host — which breaks when the env var
+// points to a local MinIO address instead of a public storage endpoint.
+async function getObjectResult(s3Key) {
+  const command = new GetObjectCommand({ Bucket: BUCKET, Key: s3Key });
+  return s3.send(command);
+}
+
+module.exports = { ensureBucketExists, generateUploadUrl, generateViewUrl, uploadBuffer, getObjectResult };
