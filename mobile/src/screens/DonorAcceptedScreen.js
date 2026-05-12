@@ -24,6 +24,9 @@ export default function DonorAcceptedScreen() {
   const [activeSessions, setActiveSessions] = useState({});
   const [callingId, setCallingId]           = useState(null);
   const [endingId, setEndingId]             = useState(null);
+  // revealState: { [responseId]: { donorRevealed, requesterRevealed, requesterPhone } }
+  const [revealState, setRevealState]       = useState({});
+  const [revealingId, setRevealingId]       = useState(null);
 
   useEffect(() => {
     fetchMyResponses();
@@ -36,12 +39,19 @@ export default function DonorAcceptedScreen() {
       setLoading(true);
       const res = await api.get('/donors/my-responses');
       setResponses(res.data.responses);
-      // Seed activeSessions from DB — proxySessionId already set means session is live
+      // Seed activeSessions and revealState from DB
       const sessions = {};
+      const reveals  = {};
       for (const r of res.data.responses) {
         if (r.proxySessionId) sessions[r.id] = r.proxySessionId;
+        reveals[r.id] = {
+          donorRevealed:     r.donorRevealed     ?? false,
+          requesterRevealed: r.requesterRevealed ?? false,
+          requesterPhone:    (r.donorRevealed && r.requesterRevealed) ? r.request?.requester?.phone : null,
+        };
       }
       setActiveSessions(sessions);
+      setRevealState(reveals);
     } catch (err) {
       Alert.alert('Error', 'Could not load your accepted requests.');
     } finally {
@@ -86,11 +96,36 @@ export default function DonorAcceptedScreen() {
     }
   }
 
+  async function handleReveal(response) {
+    setRevealingId(response.id);
+    try {
+      const res = await api.post(`/call/${response.requestId}/reveal`);
+      setRevealState((prev) => ({
+        ...prev,
+        [response.id]: {
+          donorRevealed:     true,
+          requesterRevealed: res.data.otherRevealed,
+          requesterPhone:    res.data.phone,
+        },
+      }));
+      if (res.data.phone) {
+        Alert.alert('🔓 Both numbers revealed!', `Requester's number: ${res.data.phone}`);
+      } else {
+        Alert.alert('📱 Number shared', "You've shared your number. You'll be notified when the requester shares theirs.");
+      }
+    } catch (err) {
+      Alert.alert('Error', err.response?.data?.error || 'Could not share number.');
+    } finally {
+      setRevealingId(null);
+    }
+  }
+
   function renderResponse({ item }) {
     const req    = item.request;
     const status = formatRequestStatus(req.status);
     const sessionActive = !!activeSessions[item.id];
     const isDonated     = item.status === 'DONATED';
+    const reveal        = revealState[item.id] || {};
 
     return (
       <View style={styles.card}>
@@ -142,6 +177,27 @@ export default function DonorAcceptedScreen() {
                   : <Text style={styles.callBtnText}>📞  Call Requester</Text>
                 }
               </TouchableOpacity>
+            )}
+
+            {/* Mutual phone reveal */}
+            {!reveal.donorRevealed ? (
+              <TouchableOpacity
+                style={styles.revealBtn}
+                onPress={() => handleReveal(item)}
+                disabled={revealingId === item.id}
+              >
+                {revealingId === item.id
+                  ? <ActivityIndicator size="small" color={COLORS.primary} />
+                  : <Text style={styles.revealBtnText}>👁  Share my number</Text>
+                }
+              </TouchableOpacity>
+            ) : reveal.requesterPhone ? (
+              <View style={styles.revealedBox}>
+                <Text style={styles.revealedLabel}>Requester's number</Text>
+                <Text style={styles.revealedPhone}>{reveal.requesterPhone}</Text>
+              </View>
+            ) : (
+              <Text style={styles.revealPending}>You shared your number — waiting for requester…</Text>
             )}
           </View>
         )}
@@ -232,6 +288,25 @@ const styles = StyleSheet.create({
     alignItems:   'center',
   },
   endCallBtnText: { color: '#EF4444', fontWeight: '600', fontSize: 14 },
+
+  revealBtn: {
+    borderWidth:  1,
+    borderColor:  COLORS.primary,
+    borderRadius: 10,
+    padding:      12,
+    alignItems:   'center',
+    marginTop:    8,
+  },
+  revealBtnText:  { color: COLORS.primary, fontWeight: '600', fontSize: 14 },
+  revealedBox: {
+    backgroundColor: '#DCFCE7',
+    borderRadius:    10,
+    padding:         12,
+    marginTop:       8,
+  },
+  revealedLabel: { fontSize: 12, color: '#15803D', marginBottom: 2 },
+  revealedPhone: { fontSize: 16, fontWeight: '700', color: '#15803D' },
+  revealPending: { fontSize: 13, color: COLORS.textMuted, fontStyle: 'italic', marginTop: 8, textAlign: 'center' },
 
   emptyState:    { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32 },
   emptyIcon:     { fontSize: 48, marginBottom: 16 },

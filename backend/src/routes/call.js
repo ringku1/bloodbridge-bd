@@ -16,6 +16,7 @@
 const express          = require('express');
 const prisma           = require('../config/prisma');
 const twilioService    = require('../services/twilioService');
+const fcmService       = require('../services/fcmService');
 const authMiddleware   = require('../middleware/auth');
 
 const router = express.Router();
@@ -135,6 +136,99 @@ router.delete('/:sessionId', async (req, res, next) => {
     });
 
     res.json({ message: 'Call session ended' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/call/:requestId/reveal ────────────────────────────────────────
+// The caller (donor OR requester) opts in to sharing their real phone number.
+//
+// Behaviour:
+//   - Sets the caller's revealed flag on the DonorResponse row.
+//   - Sends a push notification to the OTHER party so they know.
+//   - If BOTH parties have now revealed, returns both real phone numbers to the caller.
+//
+// Returns:
+//   {
+//     yourReveal:    true,
+//     otherRevealed: bool,
+//     phone:         string | null   // other party's phone — only when both revealed
+//   }
+router.post('/:requestId/reveal', async (req, res, next) => {
+  try {
+    const { requestId } = req.params;
+
+    const response = await prisma.donorResponse.findFirst({
+      where: {
+        requestId,
+        status: 'ACCEPTED',
+      },
+      include: {
+        donor:   { select: { id: true, phone: true, name: true, fcmToken: true } },
+        request: {
+          include: {
+            requester: { select: { id: true, phone: true, name: true, fcmToken: true } },
+          },
+        },
+      },
+    });
+
+    if (!response) {
+      return res.status(404).json({ error: 'No accepted donor found for this request.' });
+    }
+
+    const isDonor     = req.user.id === response.donorId;
+    const isRequester = req.user.id === response.request.requesterId;
+
+    if (!isDonor && !isRequester) {
+      return res.status(403).json({ error: 'You are not a participant in this blood request.' });
+    }
+
+    // Determine which flag to set and which party to notify
+    const updateData = isDonor ? { donorRevealed: true } : { requesterRevealed: true };
+
+    const updated = await prisma.donorResponse.update({
+      where: { id: response.id },
+      data:  updateData,
+    });
+
+    const donorRevealed     = updated.donorRevealed;
+    const requesterRevealed = updated.requesterRevealed;
+    const bothRevealed      = donorRevealed && requesterRevealed;
+
+    // Notify the other party that this user shared their number
+    const myName       = isDonor ? response.donor.name : response.request.requester.name;
+    const otherToken   = isDonor
+      ? response.request.requester.fcmToken
+      : response.donor.fcmToken;
+
+    await fcmService.send(otherToken, {
+      title: '📱 Phone number shared',
+      body:  `${myName || 'Your contact'} has shared their phone number. Share yours to see theirs.`,
+      data:  { requestId, screen: 'PhoneReveal' },
+    });
+
+    // If both revealed, also notify the other party that they can now see the number
+    if (bothRevealed) {
+      await fcmService.send(otherToken, {
+        title: '🔓 Both numbers revealed!',
+        body:  `You can now see each other's phone numbers. Open the request to view.`,
+        data:  { requestId, screen: 'PhoneReveal' },
+      });
+
+      return res.json({
+        yourReveal:    true,
+        otherRevealed: true,
+        phone:         isDonor ? response.request.requester.phone : response.donor.phone,
+      });
+    }
+
+    res.json({
+      yourReveal:    true,
+      otherRevealed: isDonor ? requesterRevealed : donorRevealed,
+      phone:         null,
+    });
   } catch (err) {
     next(err);
   }

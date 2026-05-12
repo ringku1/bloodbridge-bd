@@ -27,20 +27,30 @@ export default function ActiveRequestScreen() {
   const [endingId, setEndingId]         = useState(null);
   // activeSessions: { [responseId]: sessionId } — populated after a call is initiated
   const [activeSessions, setActiveSessions] = useState({});
+  // revealState: { [responseId]: { requesterRevealed, donorRevealed, donorPhone } }
+  const [revealState, setRevealState]   = useState({});
+  const [revealingId, setRevealingId]   = useState(null);
 
   useEffect(() => {
     fetchActiveRequests();
   }, []);
 
-  // Seed activeSessions from DB whenever the list refreshes
+  // Seed activeSessions and revealState from DB whenever the list refreshes
   useEffect(() => {
     const sessions = {};
+    const reveals  = {};
     for (const req of activeRequests) {
       for (const r of req.responses ?? []) {
         if (r.proxySessionId) sessions[r.id] = r.proxySessionId;
+        reveals[r.id] = {
+          requesterRevealed: r.requesterRevealed ?? false,
+          donorRevealed:     r.donorRevealed     ?? false,
+          donorPhone:        (r.requesterRevealed && r.donorRevealed) ? r.donor?.phone : null,
+        };
       }
     }
     setActiveSessions(sessions);
+    setRevealState(reveals);
   }, [activeRequests]);
 
   const onRefresh = useCallback(() => fetchActiveRequests(), []);
@@ -105,6 +115,30 @@ export default function ActiveRequestScreen() {
     }
   }
 
+  async function handleReveal(requestId, responseId) {
+    setRevealingId(responseId);
+    try {
+      const res = await api.post(`/call/${requestId}/reveal`);
+      setRevealState((prev) => ({
+        ...prev,
+        [responseId]: {
+          requesterRevealed: true,
+          donorRevealed:     res.data.otherRevealed,
+          donorPhone:        res.data.phone,
+        },
+      }));
+      if (res.data.phone) {
+        Alert.alert('🔓 Both numbers revealed!', `Donor's number: ${res.data.phone}`);
+      } else {
+        Alert.alert('📱 Number shared', "You've shared your number. You'll be notified when the donor shares theirs.");
+      }
+    } catch (err) {
+      Alert.alert('Error', err.response?.data?.error || 'Could not share number.');
+    } finally {
+      setRevealingId(null);
+    }
+  }
+
   function renderRequest({ item: req }) {
     const status = formatRequestStatus(req.status);
     const acceptedDonors = req.responses?.filter((r) => r.status === 'ACCEPTED') || [];
@@ -142,6 +176,7 @@ export default function ActiveRequestScreen() {
           acceptedDonors.map((response) => {
             const sessionId     = activeSessions[response.id];
             const sessionActive = !!sessionId;
+            const reveal        = revealState[response.id] || {};
             return (
               <View key={response.id} style={styles.donorRow}>
                 <View style={{ flex: 1 }}>
@@ -149,6 +184,11 @@ export default function ActiveRequestScreen() {
                   <Text style={styles.donorVerified}>
                     {response.donor?.verifiedStatus === 'VERIFIED' ? '✅ Verified' : '⚠️ Unverified'}
                   </Text>
+                  {reveal.donorPhone ? (
+                    <Text style={styles.revealedPhone}>📞 {reveal.donorPhone}</Text>
+                  ) : reveal.requesterRevealed && !reveal.donorRevealed ? (
+                    <Text style={styles.revealPending}>Waiting for donor to share…</Text>
+                  ) : null}
                 </View>
                 <View style={styles.donorActions}>
                   {sessionActive ? (
@@ -171,6 +211,18 @@ export default function ActiveRequestScreen() {
                       {callingId === req.id
                         ? <ActivityIndicator size="small" color={COLORS.primary} />
                         : <Text style={styles.callBtnText}>📞 Call</Text>
+                      }
+                    </TouchableOpacity>
+                  )}
+                  {!reveal.requesterRevealed && (
+                    <TouchableOpacity
+                      style={styles.revealBtn}
+                      onPress={() => handleReveal(req.id, response.id)}
+                      disabled={revealingId === response.id}
+                    >
+                      {revealingId === response.id
+                        ? <ActivityIndicator size="small" color={COLORS.primary} />
+                        : <Text style={styles.revealBtnText}>👁 Share #</Text>
                       }
                     </TouchableOpacity>
                   )}
@@ -287,4 +339,15 @@ const styles = StyleSheet.create({
   emptyIcon:     { fontSize: 48, marginBottom: 16 },
   emptyTitle:    { fontSize: 18, fontWeight: '700', color: COLORS.text },
   emptySubtitle: { fontSize: 14, color: COLORS.textMuted, marginTop: 4 },
+
+  revealBtn: {
+    borderWidth:  1,
+    borderColor:  COLORS.primary,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical:   8,
+  },
+  revealBtnText:  { color: COLORS.primary, fontWeight: '600', fontSize: 13 },
+  revealedPhone:  { fontSize: 13, color: COLORS.success, fontWeight: '700', marginTop: 4 },
+  revealPending:  { fontSize: 12, color: COLORS.textMuted, marginTop: 4, fontStyle: 'italic' },
 });

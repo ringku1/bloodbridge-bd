@@ -108,6 +108,8 @@ model DonorResponse {
   donor              User           @relation(fields: [donorId], references: [id], onDelete: Cascade)
   status             ResponseStatus @default(NOTIFIED)
   proxySessionId     String?        // Twilio Proxy session SID
+  donorRevealed      Boolean        @default(false)  // donor chose to share their real phone number
+  requesterRevealed  Boolean        @default(false)  // requester chose to share their real phone number
   notifiedAt         DateTime       @default(now())
   respondedAt        DateTime?
   donatedConfirmedAt DateTime?
