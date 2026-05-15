@@ -22,7 +22,7 @@ import { COLORS } from '../config';
 const POLL_INTERVAL_MS = 4000;
 
 export default function ChatScreen({ route, navigation }) {
-  const { requestId, otherName } = route.params;
+  const { requestId, otherName } = route.params ?? {};
   const currentUser = useAuthStore((state) => state.user);
 
   const [messages, setMessages]     = useState([]);
@@ -37,8 +37,16 @@ export default function ChatScreen({ route, navigation }) {
   const pollRef    = useRef(null);
 
   useEffect(() => {
-    navigation.setOptions({ title: `Chat — ${otherName}` });
+    if (otherName) navigation.setOptions({ title: `Chat — ${otherName}` });
   }, [otherName]);
+
+  if (!requestId) {
+    return (
+      <View style={styles.centered}>
+        <Text style={{ color: COLORS.textMuted }}>Invalid chat session.</Text>
+      </View>
+    );
+  }
 
   const poll = useCallback(async () => {
     try {

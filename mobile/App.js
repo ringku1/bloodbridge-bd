@@ -21,7 +21,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
+import React from 'react';
 
 import { useAuthStore }       from './src/store/authStore';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
@@ -41,6 +42,35 @@ import ChatScreen           from './src/screens/ChatScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
+
+class ErrorBoundary extends React.Component {
+  state = { crashed: false, error: null };
+  static getDerivedStateFromError(error) {
+    return { crashed: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error.message, info.componentStack);
+  }
+  render() {
+    if (this.state.crashed) {
+      return (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+          <Text style={{ fontSize: 18, fontWeight: '700', marginBottom: 8 }}>Something went wrong</Text>
+          <Text style={{ color: '#6B7280', textAlign: 'center', marginBottom: 24 }}>
+            {this.state.error?.message || 'An unexpected error occurred.'}
+          </Text>
+          <Text
+            style={{ color: '#DC2626', fontWeight: '600' }}
+            onPress={() => this.setState({ crashed: false, error: null })}
+          >
+            Tap to retry
+          </Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─── Profile tab stack ─────────────────────────────────────────────────────────
 function ProfileStack() {
@@ -126,12 +156,14 @@ export default function App() {
   usePushNotifications();
 
   return (
-    <SafeAreaProvider>
-      <NavigationContainer ref={navigationRef}>
-        <StatusBar style="auto" />
-        <RootNavigator />
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <NavigationContainer ref={navigationRef}>
+          <StatusBar style="auto" />
+          <RootNavigator />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 
