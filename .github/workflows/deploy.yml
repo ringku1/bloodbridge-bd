@@ -43,7 +43,6 @@ jobs:
           node-version: '20'
 
       - name: Deploy to Vercel (production)
-        working-directory: backend
         run: npx vercel --prod --yes --token ${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID:     ${{ secrets.VERCEL_ORG_ID }}
@@ -63,7 +62,6 @@ jobs:
           node-version: '20'
 
       - name: Deploy to Vercel (production)
-        working-directory: admin
         run: npx vercel --prod --yes --token ${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID:     ${{ secrets.VERCEL_ORG_ID }}
