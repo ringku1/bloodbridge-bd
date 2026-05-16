@@ -1,20 +1,8 @@
 # .github/workflows/ci.yml
 #
 # Runs on every push and pull request to main.
-#
-# Jobs:
-#   backend  — install, audit, migrate, test
-#   mobile   — install, audit
-#   admin    — install, audit, next build
-#   docker   — Docker image build (after backend passes)
-#   deploy-backend — Vercel prod deploy (push to main only, after backend passes)
-#   deploy-admin   — Vercel prod deploy (push to main only, after admin passes)
-#
-# Required GitHub Secrets (Settings → Secrets → Actions):
-#   VERCEL_TOKEN              — Personal access token from vercel.com/account/tokens
-#   VERCEL_ORG_ID             — Team/personal scope ID (vercel.com/account → Settings → General)
-#   VERCEL_BACKEND_PROJECT_ID — Project ID for the backend (Vercel dashboard → project → Settings)
-#   VERCEL_ADMIN_PROJECT_ID   — Project ID for the admin dashboard
+# Jobs: backend, mobile, admin, docker.
+# Deployments are triggered manually — see deploy.yml.
 
 name: CI
 
@@ -162,46 +150,3 @@ jobs:
         working-directory: backend
         run: docker build -t blood-bridge-backend:ci .
 
-  # ─── Deploy backend to Vercel ────────────────────────────────────────────────
-  deploy-backend:
-    name: Deploy Backend
-    runs-on: ubuntu-latest
-    needs: backend
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Deploy to Vercel (production)
-        working-directory: backend
-        run: npx vercel --prod --yes --token ${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID:     ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_BACKEND_PROJECT_ID }}
-
-  # ─── Deploy admin to Vercel ──────────────────────────────────────────────────
-  deploy-admin:
-    name: Deploy Admin
-    runs-on: ubuntu-latest
-    needs: admin
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Deploy to Vercel (production)
-        working-directory: admin
-        run: npx vercel --prod --yes --token ${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID:     ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
