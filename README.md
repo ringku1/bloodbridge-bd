@@ -97,7 +97,8 @@ Blood-Bridge/
 │
 ├── .github/
 │   ├── workflows/
-│   │   └── ci.yml                # CI: lint, Docker build, backend + mobile checks
+│   │   ├── ci.yml                # CI: audit, migrate, test, Docker build (every push/PR)
+│   │   └── deploy.yml            # Manual deploy: backend | admin | cloudflare-worker | all
 │   └── dependabot.yml            # Weekly automated dependency update PRs
 │
 ├── LICENSE                       # Proprietary — all rights reserved
@@ -788,6 +789,29 @@ The production stack runs entirely on **free tiers, no credit card required**:
 3. **Backblaze B2** — create private bucket → create App Key → copy credentials
 4. **Vercel** — import repo, root dir = `backend`, add all env vars (including `CRON_SECRET`) → deploy
 5. **Cloudflare Worker** — deploy the cron scheduler (see below)
+
+### Deploying via GitHub Actions
+
+After the initial setup above, all future deployments can be triggered from GitHub:
+
+1. Go to your repo → **Actions** tab → **Deploy** workflow
+2. Click **Run workflow** → pick a target from the dropdown:
+   - `backend` — deploys the Express API to Vercel
+   - `admin` — deploys the Next.js dashboard to Vercel
+   - `cloudflare-worker` — deploys the cron scheduler via Wrangler
+   - `all` — deploys all three in parallel
+3. Click **Run workflow**
+
+**Required GitHub Secrets** (repo → Settings → Secrets and variables → Actions):
+
+| Secret | Where to find it |
+|---|---|
+| `VERCEL_TOKEN` | vercel.com → Account Settings → Tokens → Create |
+| `VERCEL_ORG_ID` | vercel.com → Account Settings → General → Your ID |
+| `VERCEL_BACKEND_PROJECT_ID` | Vercel dashboard → backend project → Settings → General → Project ID |
+| `VERCEL_ADMIN_PROJECT_ID` | Vercel dashboard → admin project → Settings → General → Project ID |
+| `CLOUDFLARE_API_TOKEN` | dash.cloudflare.com → My Profile → API Tokens → Create Token (use "Edit Cloudflare Workers" template) |
+| `CLOUDFLARE_ACCOUNT_ID` | dash.cloudflare.com → Workers & Pages → right sidebar → Account ID |
 
 ### Cloudflare Worker setup
 
