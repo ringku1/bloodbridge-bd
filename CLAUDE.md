@@ -504,5 +504,5 @@ volumes:
 - No payment processing
 - No blood bank inventory management (only volunteer donors)
 - No web admin panel in this phase (manual DB review for NID verification is fine initially)
-- No chat/messaging — only masked phone calls via Twilio Proxy
+- No persistent chat/messaging — a 1-hour temporary Redis-backed chat was added (expires automatically, nothing stored in DB)
 - No social features (likes, shares, donor leaderboard) in v1

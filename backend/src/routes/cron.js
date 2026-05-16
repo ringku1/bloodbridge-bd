@@ -178,7 +178,7 @@ router.post('/eligibility', async (req, res, next) => {
 
     await prisma.user.updateMany({
       where: { id: { in: donors.map((d) => d.id) } },
-      data:  { isAvailable: true },
+      data:  { isAvailable: true, eligibleAgainAt: null },
     });
 
     for (const donor of donors) {

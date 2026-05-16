@@ -34,7 +34,7 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 
 ---
 
-## Three Core Features
+## Five Core Features
 
 ### 1. Verified Donor + Masked Contact
 - OTP via SMS (SSL Wireless) for phone auth
@@ -46,7 +46,7 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 ### 2. 120-Day Auto-Eligibility Tracker
 - When a donation is confirmed, donor is auto-locked (`isAvailable = false`)
 - A daily cron job at 6:00 AM BST checks who is eligible again and:
-  - Flips `isAvailable = true`
+  - Flips `isAvailable = true`, clears `eligibleAgainAt`
   - Sends an Expo push notification: "You can donate again!"
 - Blood requests auto-expire after 6 hours — a 15-minute cron marks stale OPEN requests as EXPIRED
 
@@ -56,6 +56,18 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 - **T + 30 min**: Still no donor → SMS all registered caregivers of the requester
 - Escalation stops automatically when a donor accepts — the cron skips any request that is no longer OPEN
 - Caregivers are managed in the app (up to 5 per user, ordered by priority)
+
+### 4. Mutual Phone Reveal
+- After a donor accepts, either party can tap "Share my number" to opt in to revealing their real phone number
+- The other party receives a push notification ("X has shared their phone number")
+- The real phone number is shown **only when both sides have opted in** — privacy-first, no third-party cost
+- Consent flags (`donorRevealed`, `requesterRevealed`) are stored per `DonorResponse` in the DB
+
+### 5. Temporary 1-Hour Chat
+- After a match, donor and requester get a private chat window that disappears after 1 hour
+- Messages stored in a Redis LIST with a 1-hour TTL — no chat history persists after expiry
+- Mobile app polls every 4 seconds for new messages using an index-based `since=N` parameter (efficient: only fetches new messages)
+- Expiry countdown shown in a yellow banner; expired chat shows a red "messages deleted" banner
 
 ---
 
@@ -97,7 +109,8 @@ Blood-Bridge/
 │   │   │   ├── donors.js         # Profile, availability, eligibility, my-responses
 │   │   │   ├── requests.js       # Create request, accept, confirm donation
 │   │   │   ├── verify.js         # NID upload (S3 presigned), admin approval
-│   │   │   ├── call.js           # Twilio Proxy session create/end
+│   │   │   ├── call.js           # Twilio Proxy session create/end + mutual phone reveal
+│   │   │   ├── chat.js           # 1-hour temporary Redis-backed chat
 │   │   │   ├── caregivers.js     # Emergency caregiver CRUD (escalation contacts)
 │   │   │   └── cron.js           # Protected cron endpoints called by Cloudflare Worker
 │   │   ├── services/
@@ -164,10 +177,11 @@ Blood-Bridge/
         │   ├── HomeScreen.js          # Dashboard: eligibility + availability toggle
         │   ├── DonorProfileScreen.js  # Name / blood group / GPS / caregivers link
         │   ├── RequestBloodScreen.js  # Post a blood request
-        │   ├── ActiveRequestScreen.js # Requester tracks request + confirm + call/end call
+        │   ├── ActiveRequestScreen.js # Requester tracks request + confirm + call/end call + reveal
         │   ├── VerificationScreen.js  # NID photo upload flow
         │   ├── DonorRequestScreen.js  # Donor views request detail + accepts (via push tap)
-        │   ├── DonorAcceptedScreen.js # Donor tracks accepted requests + call requester
+        │   ├── DonorAcceptedScreen.js # Donor tracks accepted requests + call requester + reveal
+        │   ├── ChatScreen.js          # 1-hour temporary chat with donor/requester
         │   └── CaregiversScreen.js    # Add/remove emergency caregivers
         ├── components/
         │   └── BloodGroupPicker.js    # Reusable blood group button grid
@@ -364,13 +378,14 @@ App
 └── (logged in)      Bottom Tab Navigator
       ├── 🏠 Home     HomeScreen              — eligibility card, availability toggle
       ├── 🩸 Request  RequestBloodScreen      — create a blood request
-      │               ActiveRequestScreen     — track request, confirm donation, call donor
-      ├── 💉 Donate   DonorAcceptedScreen     — donor's accepted requests, call requester
+      │               ActiveRequestScreen     — track request, confirm donation, call/reveal/chat
+      ├── 💉 Donate   DonorAcceptedScreen     — donor's accepted requests, call/reveal/chat
       └── 👤 Profile  DonorProfileScreen      — name, blood group, GPS
                       VerificationScreen      — NID photo upload
                       CaregiversScreen        — add/remove emergency SMS contacts
 
 Push notification tap → DonorRequestScreen   — donor views request detail + Accept button
+Any matched pair     → ChatScreen            — 1-hour temporary chat (expires automatically)
 ```
 
 ---
@@ -445,14 +460,28 @@ Blood requests expire after 6 hours — a background job marks them `EXPIRED` ev
 
 ---
 
-### Masked Calling
+### Masked Calling & Phone Reveal
 
 | Method | Endpoint | Body | Auth | Description |
 |---|---|---|---|---|
 | POST | `/call/initiate` | `{ requestId }` | ✅ | Create or retrieve proxy session → returns `{ donorProxyNumber, requesterProxyNumber }` |
 | DELETE | `/call/:sessionId` | — | ✅ | End proxy session |
+| POST | `/call/:requestId/reveal` | — | ✅ | Opt in to sharing your real phone number. Returns `{ yourReveal: true, otherRevealed: bool, phone: string\|null }`. When both parties have revealed, `phone` contains the other party's real number. |
 
 Both the donor and requester can call `POST /call/initiate`. The requester dials `donorProxyNumber`; the donor dials `requesterProxyNumber`. Neither sees the other's real phone number.
+
+Phone reveal is mutual and opt-in: calling `/reveal` sets your consent flag. The other party receives a push notification. Their real number is returned only once both flags are set.
+
+---
+
+### Chat
+
+| Method | Endpoint | Query / Body | Auth | Description |
+|---|---|---|---|---|
+| POST | `/chat/:requestId` | `{ text }` (max 500 chars) | ✅ | Send a message. First message sets the 1-hour TTL on the Redis key. |
+| GET | `/chat/:requestId` | `?since=N` | ✅ | Fetch messages from index N onwards. Returns `{ messages, total, ttlSeconds, expired }`. |
+
+Chat is backed by a Redis LIST (`chat:{requestId}`, TTL 3600 s). Only the donor and requester of the matched request can read or write. After 1 hour all messages are automatically deleted — nothing is persisted to the database.
 
 ---
 
