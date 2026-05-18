@@ -18,7 +18,7 @@
     "@aws-sdk/client-s3": "^3.490.0",
     "@aws-sdk/s3-request-presigner": "^3.490.0",
     "@prisma/client": "^5.10.0",
-    "axios": "^1.6.8",
+    "axios": "^1.16.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "expo-server-sdk": "^3.15.0",
