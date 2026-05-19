@@ -26,6 +26,16 @@ updates:
       - "dependencies"
       - "mobile"
 
+  - package-ecosystem: "npm"
+    directory: "/admin"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "admin"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
