@@ -15,8 +15,8 @@
     "audit:check": "npm audit --audit-level=high --omit=dev"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.490.0",
-    "@aws-sdk/s3-request-presigner": "^3.490.0",
+    "@aws-sdk/client-s3": "^3.1049.0",
+    "@aws-sdk/s3-request-presigner": "^3.1049.0",
     "@prisma/client": "^5.10.0",
     "axios": "^1.6.8",
     "cors": "^2.8.5",
