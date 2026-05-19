@@ -40,11 +40,12 @@ export default function DonorAcceptedScreen() {
     try {
       setLoading(true);
       const res = await api.get('/donors/my-responses');
-      setResponses(res.data.responses);
+      const responseList = res.data.responses ?? [];
+      setResponses(responseList);
       // Seed activeSessions and revealState from DB
       const sessions = {};
       const reveals  = {};
-      for (const r of res.data.responses) {
+      for (const r of responseList) {
         if (r.proxySessionId) sessions[r.id] = r.proxySessionId;
         reveals[r.id] = {
           donorRevealed:     r.donorRevealed     ?? false,
@@ -124,7 +125,7 @@ export default function DonorAcceptedScreen() {
 
   function renderResponse({ item }) {
     const req    = item.request;
-    const status = formatRequestStatus(req.status);
+    const status = formatRequestStatus(req?.status);
     const sessionActive = !!activeSessions[item.id];
     const isDonated     = item.status === 'DONATED';
     const reveal        = revealState[item.id] || {};
@@ -134,12 +135,12 @@ export default function DonorAcceptedScreen() {
         {/* Header */}
         <View style={styles.cardHeader}>
           <View style={styles.bloodBadge}>
-            <Text style={styles.bloodBadgeText}>{formatBloodGroup(req.bloodGroup)}</Text>
+            <Text style={styles.bloodBadgeText}>{formatBloodGroup(req?.bloodGroup)}</Text>
           </View>
           <View style={styles.cardTitles}>
-            <Text style={styles.hospitalName}>{req.hospitalName}</Text>
+            <Text style={styles.hospitalName}>{req?.hospitalName || 'Hospital'}</Text>
             <Text style={styles.meta}>
-              {req.requester?.name || 'Requester'} · {timeAgo(item.respondedAt)}
+              {req?.requester?.name || 'Requester'} · {timeAgo(item.respondedAt)}
             </Text>
           </View>
           <View style={[styles.statusBadge, { backgroundColor: status.color + '22' }]}>
@@ -155,15 +156,18 @@ export default function DonorAcceptedScreen() {
         )}
 
         {/* Call actions — only when request is still MATCHED (not yet fulfilled) */}
-        {!isDonated && req.status === 'MATCHED' && (
+        {!isDonated && req?.status === 'MATCHED' && (
           <View style={styles.actions}>
             {/* Chat button — always available while matched */}
             <TouchableOpacity
               style={styles.chatBtn}
-              onPress={() => navigation.navigate('Chat', {
-                requestId: item.requestId,
-                otherName: req.requester?.name || 'Requester',
-              })}
+              onPress={() => {
+                if (!item?.requestId) return;
+                navigation.navigate('Chat', {
+                  requestId: item.requestId,
+                  otherName: req?.requester?.name || 'Requester',
+                });
+              }}
             >
               <Text style={styles.chatBtnText}>💬  Chat with Requester</Text>
             </TouchableOpacity>

@@ -53,6 +53,9 @@ if (process.env.MINIO_PUBLIC_URL) {
 const s3Public = new S3Client(s3PublicConfig);
 
 const BUCKET = process.env.AWS_S3_BUCKET;
+if (!BUCKET && process.env.NODE_ENV !== 'test') {
+  console.warn('[S3] AWS_S3_BUCKET is not set — S3 operations will fail at runtime');
+}
 
 // Called once at server startup (from server.js).
 // Creates the bucket if it doesn't exist — safe to call repeatedly (no-op if exists).

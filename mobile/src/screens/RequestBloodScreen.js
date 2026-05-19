@@ -40,7 +40,8 @@ export default function RequestBloodScreen({ navigation }) {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setLatitude(loc.coords.latitude);
       setLongitude(loc.coords.longitude);
-    } catch {
+    } catch (err) {
+      console.error('[RequestBlood]', err.message);
       Alert.alert('Error', 'Could not get location.');
     } finally {
       setLocating(false);
@@ -63,11 +64,12 @@ export default function RequestBloodScreen({ navigation }) {
 
       Alert.alert(
         'Request sent!',
-        `${result.donorsNotified} donor(s) have been notified nearby.`,
+        `${result?.donorsNotified ?? 0} donor(s) have been notified nearby.`,
         [{ text: 'Track request', onPress: () => navigation.navigate('ActiveRequest') }]
       );
-    } catch {
+    } catch (err) {
       // Error is already set in the store; show it here
+      console.error('[RequestBlood]', err.message);
       Alert.alert('Error', 'Failed to post request. Check your connection and try again.');
     }
   }
@@ -109,8 +111,8 @@ export default function RequestBloodScreen({ navigation }) {
             </Text>
         }
       </TouchableOpacity>
-      {latitude && (
-        <Text style={styles.coordsText}>{latitude.toFixed(5)}, {longitude.toFixed(5)}</Text>
+      {latitude != null && longitude != null && (
+        <Text style={styles.coordsText}>{Number(latitude).toFixed(5)}, {Number(longitude).toFixed(5)}</Text>
       )}
 
       <TouchableOpacity

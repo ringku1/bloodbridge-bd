@@ -35,7 +35,7 @@ export default function CaregiversScreen() {
     try {
       setLoading(true);
       const res = await api.get('/caregivers');
-      setCaregivers(res.data.caregivers);
+      setCaregivers(res.data.caregivers ?? []);
     } catch (err) {
       Alert.alert('Error', 'Could not load caregivers.');
     } finally {

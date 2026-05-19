@@ -61,7 +61,7 @@ async function findNearbyDonors({ lat, lng, bloodGroup, radiusKm }) {
     LIMIT 20
   `;
 
-  return donors;
+  return donors ?? [];
 }
 
 module.exports = { findNearbyDonors };

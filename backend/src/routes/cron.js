@@ -118,10 +118,10 @@ router.post('/escalate', async (req, res, next) => {
       });
       if (claimed.count === 0) continue;
 
-      const caregivers = request.requester.caregivers;
+      const caregivers = request.requester?.caregivers ?? [];
       for (const cg of caregivers) {
         const message =
-          `URGENT: ${request.requester.name || 'Someone you know'} needs ` +
+          `URGENT: ${request.requester?.name || 'Someone you know'} needs ` +
           `${request.bloodGroup.replace('_', ' ')} blood at ${request.hospitalName}. ` +
           `No donor has been found in 30 minutes. Please help or spread the word.`;
         await smsService.send(cg.phone, message);

@@ -218,10 +218,13 @@ export default function ActiveRequestScreen() {
                   )}
                   <TouchableOpacity
                     style={styles.chatBtn}
-                    onPress={() => navigation.navigate('Chat', {
-                      requestId: req.id,
-                      otherName: response.donor?.name || 'Donor',
-                    })}
+                    onPress={() => {
+                      if (!req?.id) return;
+                      navigation.navigate('Chat', {
+                        requestId: req.id,
+                        otherName: response.donor?.name || 'Donor',
+                      });
+                    }}
                   >
                     <Text style={styles.chatBtnText}>💬</Text>
                   </TouchableOpacity>

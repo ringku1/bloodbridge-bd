@@ -238,6 +238,7 @@ router.get('/admin/:userId/nid-photo', adminAuth, async (req, res, next) => {
     res.setHeader('Content-Type',  result.ContentType  || 'image/jpeg');
     res.setHeader('Cache-Control', 'private, max-age=3600');
     result.Body.on('error', (err) => next(err));
+    res.on('error', (err) => console.error('[NID Photo Proxy] Response stream error:', err.message));
     result.Body.pipe(res);
   } catch (err) {
     next(err);

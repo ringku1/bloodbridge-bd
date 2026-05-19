@@ -22,8 +22,10 @@ const { Expo } = require('expo-server-sdk');
 const expo = new Expo();
 
 // Send a push notification to a single Expo push token
-async function send(pushToken, { title, body, data = {} }) {
+async function send(pushToken, notification) {
   if (!pushToken) return;
+  if (!notification) return;
+  const { title, body, data = {} } = notification;
 
   if (!Expo.isExpoPushToken(pushToken)) {
     console.log(`[PUSH MOCK] To: ${String(pushToken).slice(0, 20)}... | Title: ${title} | Body: ${body}`);
@@ -53,6 +55,7 @@ async function send(pushToken, { title, body, data = {} }) {
 
 // Send to multiple devices (used when notifying nearby donors)
 async function sendToMany(pushTokens, notification) {
+  if (!notification) return;
   const validTokens = pushTokens.filter(Boolean);
   if (validTokens.length === 0) return;
 
@@ -64,7 +67,7 @@ async function sendToMany(pushTokens, notification) {
       to,
       title:    notification.title,
       body:     notification.body,
-      data:     notification.data || {},
+      data:     notification.data ?? {},
       sound:    'default',
       priority: 'high',
     }));

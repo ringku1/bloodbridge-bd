@@ -28,18 +28,27 @@ async function send(phone, message) {
   }
 
   // ─── PRODUCTION MODE ───────────────────────────────────────────────────────
-  const response = await axios.get(SSL_WIRELESS_URL, {
-    params: {
-      api_token: process.env.SSL_WIRELESS_API_KEY,
-      sid:       process.env.SSL_WIRELESS_SID,
-      sms:       message,
-      msisdn:    phone,
-      // csmsid must be unique per message — used by SSL Wireless for deduplication
-      csmsid:    `BB_${Date.now()}`,
-    },
-  });
+  if (!process.env.SSL_WIRELESS_API_KEY || !process.env.SSL_WIRELESS_SID) {
+    console.error('[SMS] SSL_WIRELESS_API_KEY or SSL_WIRELESS_SID is not set — cannot send SMS');
+    return;
+  }
 
-  return response.data;
+  try {
+    const response = await axios.get(SSL_WIRELESS_URL, {
+      params: {
+        api_token: process.env.SSL_WIRELESS_API_KEY,
+        sid:       process.env.SSL_WIRELESS_SID,
+        sms:       message,
+        msisdn:    phone,
+        // csmsid must be unique per message — used by SSL Wireless for deduplication
+        csmsid:    `BB_${Date.now()}`,
+      },
+    });
+
+    return response.data;
+  } catch (err) {
+    throw new Error(`[SMS] SSL Wireless request failed: ${err.message}`);
+  }
 }
 
 module.exports = { send };

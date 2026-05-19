@@ -102,7 +102,14 @@ router.get('/:requestId', async (req, res, next) => {
 
     const total       = await redis.llen(key);
     const rawMessages = since < total ? await redis.lrange(key, since, -1) : [];
-    const messages    = rawMessages.map((m) => { try { return JSON.parse(m); } catch { return null; } }).filter(Boolean);
+    const messages    = rawMessages.map((m) => {
+      try {
+        return JSON.parse(m);
+      } catch (e) {
+        console.error('[Chat] Corrupted Redis message, skipping:', e.message);
+        return null;
+      }
+    }).filter(Boolean);
 
     res.json({
       messages,

@@ -106,7 +106,7 @@ export default function HomeScreen({ navigation }) {
           <>
             <Text style={styles.eligibilityIcon}>⏳</Text>
             <Text style={styles.eligibilityTitle}>
-              {eligibility?.daysRemaining} day{eligibility?.daysRemaining !== 1 ? 's' : ''} remaining
+              {eligibility?.daysRemaining ?? '?'} day{(eligibility?.daysRemaining ?? 1) !== 1 ? 's' : ''} remaining
             </Text>
             <Text style={styles.eligibilitySubtitle}>
               Last donated: {formatDate(eligibility?.lastDonatedAt)}{'\n'}

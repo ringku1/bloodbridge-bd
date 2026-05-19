@@ -34,6 +34,7 @@ export default function DonorRequestScreen({ route, navigation }) {
       const res = await api.get(`/requests/${requestId}`);
       setRequest(res.data.request);
     } catch (err) {
+      console.error('[DonorRequest]', err.message);
       Alert.alert('Error', 'Could not load request details.', [
         { text: 'Go back', onPress: () => navigation.goBack() },
       ]);
@@ -60,6 +61,7 @@ export default function DonorRequestScreen({ route, navigation }) {
                 [{ text: 'OK', onPress: () => navigation.goBack() }]
               );
             } catch (err) {
+              console.error('[DonorRequest]', err.message);
               Alert.alert('Error', err.response?.data?.error || 'Could not accept request.');
             } finally {
               setAccepting(false);

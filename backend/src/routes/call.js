@@ -90,6 +90,12 @@ router.post('/initiate', async (req, res, next) => {
 
     const numbers = await twilioService.getProxyNumbers(sessionSid, donorPhone, requesterPhone);
 
+    if (!numbers.donorProxyNumber || !numbers.requesterProxyNumber) {
+      return res.status(500).json({
+        error: 'Proxy session was created but one or both proxy numbers are missing. Please try again.',
+      });
+    }
+
     res.json({
       sessionId: sessionSid,
       ...numbers,
@@ -203,19 +209,23 @@ router.post('/:requestId/reveal', async (req, res, next) => {
       ? response.request.requester.fcmToken
       : response.donor.fcmToken;
 
-    await fcmService.send(otherToken, {
-      title: '📱 Phone number shared',
-      body:  `${myName || 'Your contact'} has shared their phone number. Share yours to see theirs.`,
-      data:  { requestId, screen: 'PhoneReveal' },
-    });
+    if (otherToken) {
+      await fcmService.send(otherToken, {
+        title: '📱 Phone number shared',
+        body:  `${myName || 'Your contact'} has shared their phone number. Share yours to see theirs.`,
+        data:  { requestId, screen: 'PhoneReveal' },
+      });
+    }
 
     // If both revealed, also notify the other party that they can now see the number
     if (bothRevealed) {
-      await fcmService.send(otherToken, {
-        title: '🔓 Both numbers revealed!',
-        body:  `You can now see each other's phone numbers. Open the request to view.`,
-        data:  { requestId, screen: 'PhoneReveal' },
-      });
+      if (otherToken) {
+        await fcmService.send(otherToken, {
+          title: '🔓 Both numbers revealed!',
+          body:  `You can now see each other's phone numbers. Open the request to view.`,
+          data:  { requestId, screen: 'PhoneReveal' },
+        });
+      }
 
       return res.json({
         yourReveal:    true,
