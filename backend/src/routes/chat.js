@@ -102,7 +102,7 @@ router.get('/:requestId', async (req, res, next) => {
 
     const total       = await redis.llen(key);
     const rawMessages = since < total ? await redis.lrange(key, since, -1) : [];
-    const messages    = rawMessages.map((m) => JSON.parse(m));
+    const messages    = rawMessages.map((m) => { try { return JSON.parse(m); } catch { return null; } }).filter(Boolean);
 
     res.json({
       messages,
