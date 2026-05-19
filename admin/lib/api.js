@@ -11,4 +11,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (err) => {
+    console.error('[API]', err.response?.status, err.config?.url, err.message);
+    if (err.response?.status === 401 && typeof window !== 'undefined') {
+      Cookies.remove('admin_secret');
+      window.location.href = '/login';
+    }
+    return Promise.reject(err);
+  }
+);
+
 export default api;

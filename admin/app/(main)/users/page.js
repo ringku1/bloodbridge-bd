@@ -28,6 +28,8 @@ export default function UsersPage() {
       setUsers(res.data.users);
       setTotal(res.data.total);
       setPages(res.data.pages);
+    } catch (err) {
+      console.error('[Admin]', err.message);
     } finally {
       setLoading(false);
     }

@@ -27,6 +27,8 @@ export default function RequestsPage() {
       setRequests(res.data.requests);
       setTotal(res.data.total);
       setPages(res.data.pages);
+    } catch (err) {
+      console.error('[Admin]', err.message);
     } finally {
       setLoading(false);
     }

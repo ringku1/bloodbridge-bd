@@ -23,6 +23,7 @@ export default function DashboardPage() {
   useEffect(() => {
     api.get('/admin/stats')
       .then((r) => setStats(r.data))
+      .catch((err) => console.error('[Dashboard] Failed to load stats:', err.message))
       .finally(() => setLoading(false));
   }, []);
 
@@ -35,10 +36,10 @@ export default function DashboardPage() {
         <p className="mt-8 text-gray-400">Loading…</p>
       ) : (
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
-          <StatCard icon="👥" label="Total Users"             value={stats.totalUsers}           color="bg-blue-50"   />
-          <StatCard icon="🪪" label="Pending Verifications"  value={stats.pendingVerifications} color="bg-yellow-50" sub="Awaiting NID review" />
-          <StatCard icon="🩸" label="Active Requests"        value={stats.activeRequests}       color="bg-red-50"    sub="Open or matched" />
-          <StatCard icon="✅" label="Total Donations"        value={stats.totalDonations}       color="bg-green-50"  sub="Confirmed donations" />
+          <StatCard icon="👥" label="Total Users"             value={stats?.totalUsers}           color="bg-blue-50"   />
+          <StatCard icon="🪪" label="Pending Verifications"  value={stats?.pendingVerifications} color="bg-yellow-50" sub="Awaiting NID review" />
+          <StatCard icon="🩸" label="Active Requests"        value={stats?.activeRequests}       color="bg-red-50"    sub="Open or matched" />
+          <StatCard icon="✅" label="Total Donations"        value={stats?.totalDonations}       color="bg-green-50"  sub="Confirmed donations" />
         </div>
       )}
     </div>
