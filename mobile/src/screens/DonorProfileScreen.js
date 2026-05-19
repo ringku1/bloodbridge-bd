@@ -119,9 +119,9 @@ export default function DonorProfileScreen({ navigation }) {
             </Text>
         }
       </TouchableOpacity>
-      {latitude && (
+      {latitude != null && longitude != null && (
         <Text style={styles.coordsText}>
-          {latitude.toFixed(5)}, {longitude.toFixed(5)}
+          {Number(latitude).toFixed(5)}, {Number(longitude).toFixed(5)}
         </Text>
       )}
 
