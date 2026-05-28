@@ -132,12 +132,19 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* ── Quick action ────────────────────────────────────────────────── */}
+      {/* ── Quick actions ───────────────────────────────────────────────── */}
       <TouchableOpacity
         style={styles.requestButton}
         onPress={() => navigation.navigate('RequestBlood')}
       >
         <Text style={styles.requestButtonText}>🩸  Request Blood for Someone</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.secondaryButton}
+        onPress={() => navigation.getParent()?.navigate('Browse')}
+      >
+        <Text style={styles.secondaryButtonText}>🔍  Browse Open Requests</Text>
       </TouchableOpacity>
 
     </ScrollView>
@@ -210,4 +217,13 @@ const styles = StyleSheet.create({
     marginTop:       8,
   },
   requestButtonText: { color: COLORS.white, fontSize: 16, fontWeight: '700' },
+
+  secondaryButton: {
+    borderWidth:  1,
+    borderColor:  COLORS.primary,
+    borderRadius: 12,
+    padding:      16,
+    alignItems:   'center',
+  },
+  secondaryButtonText: { color: COLORS.primary, fontSize: 15, fontWeight: '700' },
 });

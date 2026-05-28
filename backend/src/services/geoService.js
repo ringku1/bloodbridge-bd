@@ -48,6 +48,7 @@ async function findNearbyDonors({ lat, lng, bloodGroup, radiusKm }) {
       ) AS distance_meters
     FROM "User"
     WHERE "isAvailable"    = true
+      AND "emailVerified"  = true
       AND "verifiedStatus" = 'VERIFIED'::"VerifiedStatus"
       AND "bloodGroup"     = ${bloodGroup}::"BloodGroup"
       AND latitude         IS NOT NULL

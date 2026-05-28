@@ -103,6 +103,30 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// ─── GET /api/requests/browse ─────────────────────────────────────────────────
+// All OPEN requests across the country. Donors browse and pick which to accept.
+// Mobile disables Accept for non-matching blood groups; backend enforces the same
+// rule in /:id/accept so the API is safe even if the client misbehaves.
+router.get('/browse', async (req, res, next) => {
+  try {
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
+    const requests = await prisma.bloodRequest.findMany({
+      where:   { status: 'OPEN' },
+      orderBy: { createdAt: 'desc' },
+      skip:    offset,
+      take:    50,
+      include: {
+        requester: { select: { id: true, name: true, district: true } },
+      },
+    });
+
+    res.json({ requests });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── GET /api/requests/active ─────────────────────────────────────────────────
 // "active" must be defined BEFORE "/:id" so Express doesn't treat it as an ID.
 router.get('/active', async (req, res, next) => {
@@ -115,7 +139,7 @@ router.get('/active', async (req, res, next) => {
       include: {
         responses: {
           include: {
-            donor: { select: { id: true, name: true, verifiedStatus: true, phone: true } },
+            donor: { select: { id: true, name: true, verifiedStatus: true } },
           },
         },
       },
@@ -168,6 +192,12 @@ router.post('/:id/accept', async (req, res, next) => {
 
     if (request.status !== 'OPEN') {
       return res.status(409).json({ error: `Request is already ${request.status.toLowerCase()}` });
+    }
+
+    if (req.user.bloodGroup !== request.bloodGroup) {
+      return res.status(400).json({
+        error: `Only ${request.bloodGroup.replace('_', ' ')} donors can accept this request`,
+      });
     }
 
     await prisma.$transaction([

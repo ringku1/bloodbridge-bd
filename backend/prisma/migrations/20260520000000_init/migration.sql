@@ -13,8 +13,10 @@ CREATE TYPE "ResponseStatus" AS ENUM ('NOTIFIED', 'ACCEPTED', 'REJECTED', 'DONAT
 -- CreateTable
 CREATE TABLE "User" (
     "id" TEXT NOT NULL,
-    "phone" TEXT NOT NULL,
-    "phoneVerified" BOOLEAN NOT NULL DEFAULT false,
+    "email" TEXT NOT NULL,
+    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
+    "passwordHash" TEXT NOT NULL,
+    "phone" TEXT,
     "name" TEXT,
     "nidPhotoUrl" TEXT,
     "verifiedStatus" "VerifiedStatus" NOT NULL DEFAULT 'UNVERIFIED',
@@ -55,7 +57,6 @@ CREATE TABLE "DonorResponse" (
     "requestId" TEXT NOT NULL,
     "donorId" TEXT NOT NULL,
     "status" "ResponseStatus" NOT NULL DEFAULT 'NOTIFIED',
-    "proxySessionId" TEXT,
     "notifiedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "respondedAt" TIMESTAMP(3),
     "donatedConfirmedAt" TIMESTAMP(3),
@@ -74,20 +75,67 @@ CREATE TABLE "Caregiver" (
     CONSTRAINT "Caregiver_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "Favourite" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "favouriteId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Favourite_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
-CREATE UNIQUE INDEX "User_phone_key" ON "User"("phone");
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- CreateIndex
+CREATE INDEX "User_verifiedStatus_idx" ON "User"("verifiedStatus");
+
+-- CreateIndex
+CREATE INDEX "User_isAvailable_verifiedStatus_idx" ON "User"("isAvailable", "verifiedStatus");
+
+-- CreateIndex
+CREATE INDEX "BloodRequest_status_idx" ON "BloodRequest"("status");
+
+-- CreateIndex
+CREATE INDEX "BloodRequest_requesterId_idx" ON "BloodRequest"("requesterId");
+
+-- CreateIndex
+CREATE INDEX "BloodRequest_status_escalationLevel_idx" ON "BloodRequest"("status", "escalationLevel");
+
+-- CreateIndex
+CREATE INDEX "DonorResponse_donorId_idx" ON "DonorResponse"("donorId");
+
+-- CreateIndex
+CREATE INDEX "DonorResponse_requestId_idx" ON "DonorResponse"("requestId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "DonorResponse_requestId_donorId_key" ON "DonorResponse"("requestId", "donorId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Caregiver_userId_phone_key" ON "Caregiver"("userId", "phone");
+
+-- CreateIndex
+CREATE INDEX "Favourite_userId_idx" ON "Favourite"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Favourite_userId_favouriteId_key" ON "Favourite"("userId", "favouriteId");
 
 -- AddForeignKey
 ALTER TABLE "BloodRequest" ADD CONSTRAINT "BloodRequest_requesterId_fkey" FOREIGN KEY ("requesterId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "DonorResponse" ADD CONSTRAINT "DonorResponse_requestId_fkey" FOREIGN KEY ("requestId") REFERENCES "BloodRequest"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "DonorResponse" ADD CONSTRAINT "DonorResponse_requestId_fkey" FOREIGN KEY ("requestId") REFERENCES "BloodRequest"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "DonorResponse" ADD CONSTRAINT "DonorResponse_donorId_fkey" FOREIGN KEY ("donorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "DonorResponse" ADD CONSTRAINT "DonorResponse_donorId_fkey" FOREIGN KEY ("donorId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Caregiver" ADD CONSTRAINT "Caregiver_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Caregiver" ADD CONSTRAINT "Caregiver_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Favourite" ADD CONSTRAINT "Favourite_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Favourite" ADD CONSTRAINT "Favourite_favouriteId_fkey" FOREIGN KEY ("favouriteId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

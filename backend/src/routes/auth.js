@@ -1,117 +1,256 @@
 // routes/auth.js
 //
-// Phone-based OTP authentication.
+// Email + password authentication.
 //
 // Flow:
-//   1. POST /api/auth/send-otp   → generate OTP, store in Redis (5 min TTL), send via SMS
-//   2. POST /api/auth/verify-otp → check OTP, create user if new, return JWT
+//   POST /signup            → create account, return JWT (email not yet verified)
+//   POST /login             → verify password, return JWT
+//   POST /send-email-otp    → email a 6-digit code for verify | change_email | change_password
+//   POST /verify-email-otp  → consume the code; flip emailVerified or apply the requested change
+//   POST /forgot-password   → email a reset link (always 200 — never leak which emails exist)
+//   POST /reset-password    → consume the reset token, set new password
 //
-// Brute-force protection:
-//   We track failed verify attempts in Redis per phone number.
-//   After 3 consecutive failures the phone is locked for 15 minutes.
-//   The lock key is "otp_attempts:<phone>" with a 900-second TTL.
+// Redis keys:
+//   email_otp:<userId>:<purpose>  → 6-digit code, 10 min TTL
+//   pwd_reset:<token>             → userId, 30 min TTL
+//   forgot_attempts:<email>       → counter, 1 hour TTL (3 forgot-password requests/hour/email)
 
 const express = require('express');
+const bcrypt  = require('bcryptjs');
 const jwt     = require('jsonwebtoken');
+const crypto  = require('crypto');
 const prisma  = require('../config/prisma');
 const redis   = require('../config/redis');
-const smsService = require('../services/smsService');
+const emailService   = require('../services/emailService');
+const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
-const BD_PHONE_REGEX = /^\+8801[3-9]\d{8}$/;
+const EMAIL_REGEX     = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const VALID_PURPOSES  = ['verify', 'change_email', 'change_password'];
+const VALID_BLOOD     = ['A_POS','A_NEG','B_POS','B_NEG','O_POS','O_NEG','AB_POS','AB_NEG'];
 
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// ─── POST /api/auth/send-otp ──────────────────────────────────────────────────
-// Body: { phone: "+8801712345678" }
-router.post('/send-otp', async (req, res, next) => {
-  try {
-    const { phone } = req.body;
+function publicUser(u) {
+  return {
+    id:             u.id,
+    email:          u.email,
+    emailVerified:  u.emailVerified,
+    phone:          u.phone,
+    name:           u.name,
+    bloodGroup:     u.bloodGroup,
+    verifiedStatus: u.verifiedStatus,
+    isAvailable:    u.isAvailable,
+    district:       u.district,
+  };
+}
 
-    if (!phone || !BD_PHONE_REGEX.test(phone)) {
-      return res.status(400).json({
-        error: 'Invalid phone number. Use E.164 format: +8801XXXXXXXXX',
-      });
+function signJwt(user) {
+  return jwt.sign(
+    { userId: user.id, email: user.email },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
+  );
+}
+
+// ─── POST /api/auth/signup ────────────────────────────────────────────────────
+// Body: { email, password, name, bloodGroup }
+router.post('/signup', async (req, res, next) => {
+  try {
+    const { email, password, name, bloodGroup } = req.body;
+
+    if (!email || !EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: 'Valid email is required' });
+    }
+    if (!password || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+    if (bloodGroup && !VALID_BLOOD.includes(bloodGroup)) {
+      return res.status(400).json({ error: 'Invalid blood group' });
     }
 
-    const otp = generateOtp();
+    const normalizedEmail = email.toLowerCase().trim();
 
-    // key = "otp:+8801...", value = OTP, TTL = 5 minutes
-    await redis.setex(`otp:${phone}`, 300, otp);
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existing) {
+      return res.status(409).json({ error: 'An account with this email already exists' });
+    }
 
-    // Clear any previous failed-attempt counter when a fresh OTP is requested
-    await redis.del(`otp_attempts:${phone}`);
+    const passwordHash = await bcrypt.hash(password, 10);
 
-    await smsService.send(
-      phone,
-      `Your Blood Bridge OTP is: ${otp}. Valid for 5 minutes. Do not share this code.`
-    );
+    const user = await prisma.user.create({
+      data: {
+        email:        normalizedEmail,
+        passwordHash,
+        name:         name?.trim() || null,
+        bloodGroup:   bloodGroup || null,
+      },
+    });
 
-    res.json({ message: 'OTP sent successfully' });
+    res.status(201).json({ token: signJwt(user), user: publicUser(user) });
   } catch (err) {
     next(err);
   }
 });
 
-// ─── POST /api/auth/verify-otp ───────────────────────────────────────────────
-// Body: { phone: "+8801712345678", otp: "482910" }
-// Returns: { token, user }
-router.post('/verify-otp', async (req, res, next) => {
+// ─── POST /api/auth/login ─────────────────────────────────────────────────────
+// Body: { email, password }
+router.post('/login', async (req, res, next) => {
   try {
-    const { phone, otp } = req.body;
+    const { email, password } = req.body;
 
-    if (!phone || !otp) {
-      return res.status(400).json({ error: 'phone and otp are required' });
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // ── Brute-force guard ──────────────────────────────────────────────────
-    const attemptsKey = `otp_attempts:${phone}`;
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
+    });
+
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    res.json({ token: signJwt(user), user: publicUser(user) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/auth/send-email-otp ────────────────────────────────────────────
+// Auth required. Body: { purpose }
+router.post('/send-email-otp', authMiddleware, async (req, res, next) => {
+  try {
+    const { purpose } = req.body;
+
+    if (!VALID_PURPOSES.includes(purpose)) {
+      return res.status(400).json({ error: `purpose must be one of: ${VALID_PURPOSES.join(', ')}` });
+    }
+
+    const code = generateOtp();
+    await redis.setex(`email_otp:${req.user.id}:${purpose}`, 600, code);
+    await emailService.sendOtp(req.user.email, code, purpose);
+
+    res.json({ message: 'OTP sent to your email' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/auth/verify-email-otp ──────────────────────────────────────────
+// Auth required. Body: { purpose, code, newEmail?, newPassword? }
+router.post('/verify-email-otp', authMiddleware, async (req, res, next) => {
+  try {
+    const { purpose, code, newEmail, newPassword } = req.body;
+
+    if (!VALID_PURPOSES.includes(purpose)) {
+      return res.status(400).json({ error: `purpose must be one of: ${VALID_PURPOSES.join(', ')}` });
+    }
+    if (!code) {
+      return res.status(400).json({ error: 'code is required' });
+    }
+
+    const key    = `email_otp:${req.user.id}:${purpose}`;
+    const stored = await redis.get(key);
+
+    if (!stored || stored !== code) {
+      return res.status(401).json({ error: 'Invalid or expired code' });
+    }
+    await redis.del(key);
+
+    const updates = {};
+
+    if (purpose === 'verify') {
+      updates.emailVerified = true;
+    } else if (purpose === 'change_email') {
+      if (!newEmail || !EMAIL_REGEX.test(newEmail)) {
+        return res.status(400).json({ error: 'Valid newEmail is required' });
+      }
+      const normalized = newEmail.toLowerCase().trim();
+      const dup = await prisma.user.findUnique({ where: { email: normalized } });
+      if (dup && dup.id !== req.user.id) {
+        return res.status(409).json({ error: 'That email is already in use' });
+      }
+      // OTP was sent to the OLD mailbox, so the NEW one isn't yet proven.
+      // User must trigger a separate `verify` flow on the new address.
+      updates.email = normalized;
+      updates.emailVerified = false;
+    } else if (purpose === 'change_password') {
+      if (!newPassword || newPassword.length < 8) {
+        return res.status(400).json({ error: 'newPassword must be at least 8 characters' });
+      }
+      updates.passwordHash = await bcrypt.hash(newPassword, 10);
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: updates,
+    });
+
+    res.json({ user: publicUser(user) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/auth/forgot-password ───────────────────────────────────────────
+// Body: { email }
+// Always returns 200 so attackers can't learn whether an email exists.
+router.post('/forgot-password', async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email || !EMAIL_REGEX.test(email)) {
+      return res.json({ message: 'If that email exists, a reset link has been sent.' });
+    }
+
+    const normalized = email.toLowerCase().trim();
+
+    // Per-email rate limit: 3 requests / hour
+    const attemptsKey = `forgot_attempts:${normalized}`;
     const attempts    = parseInt(await redis.get(attemptsKey) || '0', 10);
-
     if (attempts >= 3) {
-      return res.status(429).json({
-        error: 'Too many failed OTP attempts. Request a new OTP and try again.',
-      });
+      return res.json({ message: 'If that email exists, a reset link has been sent.' });
+    }
+    await redis.setex(attemptsKey, 3600, attempts + 1);
+
+    const user = await prisma.user.findUnique({ where: { email: normalized } });
+    if (user) {
+      const token = crypto.randomBytes(32).toString('hex');
+      await redis.setex(`pwd_reset:${token}`, 1800, user.id);
+      const link = `${process.env.FRONTEND_RESET_URL || 'https://blood-bridge-admin.vercel.app/reset'}?token=${token}`;
+      await emailService.sendPasswordReset(user.email, link);
     }
 
-    const storedOtp = await redis.get(`otp:${phone}`);
+    res.json({ message: 'If that email exists, a reset link has been sent.' });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    if (!storedOtp || storedOtp !== otp) {
-      // Increment attempt counter; auto-expires after 15 minutes
-      await redis.setex(attemptsKey, 900, attempts + 1);
-      return res.status(401).json({ error: 'Invalid or expired OTP' });
+// ─── POST /api/auth/reset-password ────────────────────────────────────────────
+// Body: { token, newPassword }
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword || newPassword.length < 8) {
+      return res.status(400).json({ error: 'token and newPassword (8+ chars) required' });
     }
 
-    // OTP correct — clear both the OTP and the attempt counter
-    await redis.del(`otp:${phone}`, `otp_attempts:${phone}`);
+    const key    = `pwd_reset:${token}`;
+    const userId = await redis.get(key);
+    if (!userId) {
+      return res.status(401).json({ error: 'Reset link is invalid or has expired' });
+    }
+    await redis.del(key);
 
-    // upsert: if phone exists → fetch user; if not → create new user
-    const user = await prisma.user.upsert({
-      where:  { phone },
-      create: { phone, phoneVerified: true },
-      update: { phoneVerified: true },
-    });
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
 
-    const token = jwt.sign(
-      { userId: user.id, phone: user.phone },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
-    );
-
-    res.json({
-      token,
-      user: {
-        id:             user.id,
-        phone:          user.phone,
-        name:           user.name,
-        bloodGroup:     user.bloodGroup,
-        verifiedStatus: user.verifiedStatus,
-        isAvailable:    user.isAvailable,
-      },
-    });
+    res.json({ message: 'Password reset. You can now log in with your new password.' });
   } catch (err) {
     next(err);
   }

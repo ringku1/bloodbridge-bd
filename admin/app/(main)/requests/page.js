@@ -87,7 +87,7 @@ export default function RequestsPage() {
               <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-5 py-3">
                   <p className="font-medium text-gray-900">{r.requester?.name || '—'}</p>
-                  <p className="text-xs text-gray-400 font-mono">{r.requester?.phone}</p>
+                  <p className="text-xs text-gray-400">{r.requester?.email}</p>
                 </td>
                 <td className="px-5 py-3 font-bold text-red-600">{BG_LABEL[r.bloodGroup]}</td>
                 <td className="px-5 py-3 text-gray-600 max-w-xs truncate">{r.hospitalName}</td>

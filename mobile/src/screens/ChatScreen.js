@@ -80,6 +80,15 @@ export default function ChatScreen({ route, navigation }) {
     return () => clearInterval(pollRef.current);
   }, [poll]);
 
+  async function postMessage(text) {
+    const res = await api.post(`/chat/${requestId}`, { text });
+    const msg = res.data.message;
+    setMessages((prev) => [...prev, msg]);
+    totalRef.current += 1;
+    setTtlSeconds(res.data.ttlSeconds);
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+  }
+
   async function handleSend() {
     const text = inputText.trim();
     if (!text) return;
@@ -88,20 +97,44 @@ export default function ChatScreen({ route, navigation }) {
     setInputText('');
 
     try {
-      const res = await api.post(`/chat/${requestId}`, { text });
-      const msg = res.data.message;
-
-      // Optimistically append and update the index
-      setMessages((prev) => [...prev, msg]);
-      totalRef.current += 1;
-      setTtlSeconds(res.data.ttlSeconds);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+      await postMessage(text);
     } catch (err) {
-      setInputText(text); // restore on failure
+      setInputText(text);
       Alert.alert('Error', err.response?.data?.error || 'Could not send message.');
     } finally {
       setSending(false);
     }
+  }
+
+  function handleShareNumber() {
+    const phone = currentUser?.phone;
+    if (!phone) {
+      Alert.alert(
+        'No phone saved',
+        'Save your phone number in your profile first, then come back here to share it.'
+      );
+      return;
+    }
+    Alert.alert(
+      'Share your number?',
+      `Share ${phone} with ${otherName || 'this user'} in this chat?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Share',
+          onPress: async () => {
+            setSending(true);
+            try {
+              await postMessage(`📞 My number: ${phone}`);
+            } catch (err) {
+              Alert.alert('Error', err.response?.data?.error || 'Could not share number.');
+            } finally {
+              setSending(false);
+            }
+          },
+        },
+      ]
+    );
   }
 
   function formatTime(isoString) {
@@ -181,6 +214,17 @@ export default function ChatScreen({ route, navigation }) {
         }
       />
 
+      {/* Share number row */}
+      {!expired && (
+        <TouchableOpacity
+          style={styles.shareRow}
+          onPress={handleShareNumber}
+          disabled={sending}
+        >
+          <Text style={styles.shareText}>📞 Share Number?</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Input bar */}
       {!expired && (
         <View style={styles.inputBar}>
@@ -255,6 +299,15 @@ const styles = StyleSheet.create({
   emptyIcon:     { fontSize: 48, marginBottom: 16 },
   emptyTitle:    { fontSize: 18, fontWeight: '700', color: COLORS.text },
   emptySubtitle: { fontSize: 14, color: COLORS.textMuted, marginTop: 6, textAlign: 'center', lineHeight: 20 },
+
+  shareRow: {
+    alignItems:        'center',
+    paddingVertical:   8,
+    backgroundColor:   COLORS.white,
+    borderTopWidth:    1,
+    borderTopColor:    COLORS.border,
+  },
+  shareText: { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
 
   inputBar: {
     flexDirection:  'row',

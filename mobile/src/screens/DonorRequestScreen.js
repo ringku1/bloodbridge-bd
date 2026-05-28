@@ -7,7 +7,7 @@
 //   2. usePushNotifications.js taps listener navigates here with requestId
 //   3. Screen fetches full request details from GET /api/requests/:id
 //   4. Donor taps "Accept" → POST /api/requests/:id/accept
-//   5. On success: navigate back + show proxy call instructions
+//   5. On success: navigate back; donor can then open a 1-hour chat from My Donations
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -136,7 +136,7 @@ export default function DonorRequestScreen({ route, navigation }) {
 
       <Text style={styles.disclaimer}>
         By accepting, you agree to go to the hospital and donate blood as soon as possible.
-        Your phone number will never be shared directly — calls are routed through a secure proxy.
+        You can chat with the requester for an hour after accepting.
       </Text>
 
     </ScrollView>

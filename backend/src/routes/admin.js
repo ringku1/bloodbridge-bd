@@ -51,7 +51,7 @@ router.get('/users', async (req, res, next) => {
     if (req.query.search) {
       where.OR = [
         { name:  { contains: req.query.search, mode: 'insensitive' } },
-        { phone: { contains: req.query.search } },
+        { email: { contains: req.query.search, mode: 'insensitive' } },
       ];
     }
 
@@ -64,7 +64,8 @@ router.get('/users', async (req, res, next) => {
         select: {
           id:             true,
           name:           true,
-          phone:          true,
+          email:          true,
+          emailVerified:  true,
           bloodGroup:     true,
           district:       true,
           verifiedStatus: true,
@@ -102,7 +103,7 @@ router.get('/requests', async (req, res, next) => {
         take:    limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          requester: { select: { id: true, name: true, phone: true } },
+          requester: { select: { id: true, name: true, email: true } },
           _count:    { select: { responses: true } },
         },
       }),

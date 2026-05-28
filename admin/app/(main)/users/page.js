@@ -52,7 +52,7 @@ export default function UsersPage() {
       <div className="flex flex-wrap gap-3 mb-5">
         <input
           type="text"
-          placeholder="Search name or phone…"
+          placeholder="Search name or email…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleFilter()}
@@ -78,7 +78,7 @@ export default function UsersPage() {
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
               <th className="px-5 py-3">Name</th>
-              <th className="px-5 py-3">Phone</th>
+              <th className="px-5 py-3">Email</th>
               <th className="px-5 py-3">Blood</th>
               <th className="px-5 py-3">District</th>
               <th className="px-5 py-3">Status</th>
@@ -95,7 +95,10 @@ export default function UsersPage() {
             ) : users.map((u) => (
               <tr key={u.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-5 py-3 font-medium text-gray-900">{u.name || <span className="text-gray-400">—</span>}</td>
-                <td className="px-5 py-3 text-gray-600 font-mono text-xs">{u.phone}</td>
+                <td className="px-5 py-3 text-gray-600 text-xs">
+                  {u.email}
+                  {u.emailVerified && <span className="ml-1 text-green-600">✓</span>}
+                </td>
                 <td className="px-5 py-3">
                   {u.bloodGroup
                     ? <span className="font-bold text-red-600">{BG_LABEL[u.bloodGroup]}</span>

@@ -1,18 +1,16 @@
 // screens/DonorProfileScreen.js
 //
-// Allows the donor to set/update their profile.
-// This is typically the first screen shown after login if the user has no name.
+// Donor profile and account settings.
 //
-// Fields:
-//   - Name
-//   - Blood group (via BloodGroupPicker component)
-//   - District (e.g. "Dhaka", "Chattogram")
-//   - Location — obtained from the device GPS via expo-location
+// Sections:
+//   - Identity   : email (with verify), change email, change password, save phone
+//   - Donor info : name, blood group, district, GPS location
+//   - Actions    : Favourites, Caregivers, Log out
 
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, ScrollView, ActivityIndicator, Alert,
+  StyleSheet, ScrollView, ActivityIndicator, Alert, Modal,
 } from 'react-native';
 import * as Location from 'expo-location';
 import api from '../services/api';
@@ -23,17 +21,22 @@ import { COLORS } from '../config';
 export default function DonorProfileScreen({ navigation }) {
   const { user, updateUser, logout } = useAuthStore();
 
-  // Pre-fill with existing data so the user can edit in place
-  const [name, setName]           = useState(user?.name || '');
+  const [name, setName]             = useState(user?.name || '');
   const [bloodGroup, setBloodGroup] = useState(user?.bloodGroup || null);
-  const [district, setDistrict]   = useState(user?.district || '');
-  const [latitude, setLatitude]   = useState(user?.latitude || null);
-  const [longitude, setLongitude] = useState(user?.longitude || null);
-  const [loading, setLoading]     = useState(false);
-  const [locating, setLocating]   = useState(false);
+  const [district, setDistrict]     = useState(user?.district || '');
+  const [latitude, setLatitude]     = useState(user?.latitude || null);
+  const [longitude, setLongitude]   = useState(user?.longitude || null);
+  const [phone, setPhone]           = useState(user?.phone || '');
+  const [loading, setLoading]       = useState(false);
+  const [locating, setLocating]     = useState(false);
 
-  // Use expo-location to get the device's GPS coordinates.
-  // We ask for WhenInUse permission — the app doesn't need background location.
+  // OTP modal state
+  const [modalOpen, setModalOpen]       = useState(null); // 'verify' | 'change_email' | 'change_password' | null
+  const [otp, setOtp]                   = useState('');
+  const [newEmail, setNewEmail]         = useState('');
+  const [newPassword, setNewPassword]   = useState('');
+  const [modalLoading, setModalLoading] = useState(false);
+
   async function handleGetLocation() {
     setLocating(true);
     try {
@@ -42,27 +45,21 @@ export default function DonorProfileScreen({ navigation }) {
         Alert.alert('Permission denied', 'Location permission is needed to set your area.');
         return;
       }
-      // getCurrentPositionAsync returns { coords: { latitude, longitude, accuracy } }
       const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setLatitude(location.coords.latitude);
       setLongitude(location.coords.longitude);
       Alert.alert('Location set', 'Your current location has been saved.');
     } catch (err) {
+      console.error('[Profile/location]', err.message);
       Alert.alert('Error', 'Could not get location. Please try again.');
     } finally {
       setLocating(false);
     }
   }
 
-  async function handleSave() {
-    if (!name.trim()) {
-      Alert.alert('Name required', 'Please enter your full name.');
-      return;
-    }
-    if (!bloodGroup) {
-      Alert.alert('Blood group required', 'Please select your blood group.');
-      return;
-    }
+  async function handleSaveProfile() {
+    if (!name.trim()) return Alert.alert('Name required', 'Please enter your full name.');
+    if (!bloodGroup) return Alert.alert('Blood group required', 'Please select your blood group.');
 
     setLoading(true);
     try {
@@ -74,20 +71,117 @@ export default function DonorProfileScreen({ navigation }) {
         longitude,
       });
       updateUser(res.data.user);
-      Alert.alert('Saved!', 'Your profile has been updated.', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      Alert.alert('Saved!', 'Your profile has been updated.');
     } catch (err) {
+      console.error('[Profile/save]', err.message);
       Alert.alert('Error', err.response?.data?.error || 'Failed to save profile.');
     } finally {
       setLoading(false);
     }
   }
 
+  async function handleSavePhone() {
+    setLoading(true);
+    try {
+      const res = await api.put('/donors/phone', { phone: phone.trim() || null });
+      updateUser({ phone: res.data.user.phone });
+      Alert.alert('Saved!', 'Phone updated.');
+    } catch (err) {
+      console.error('[Profile/phone]', err.message);
+      Alert.alert('Error', err.response?.data?.error || 'Failed to save phone.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function startOtpFlow(purpose) {
+    setOtp(''); setNewEmail(''); setNewPassword('');
+    setModalOpen(purpose);
+    try {
+      await api.post('/auth/send-email-otp', { purpose });
+    } catch (err) {
+      console.error('[Profile/otp-send]', err.message);
+      Alert.alert('Error', err.response?.data?.error || 'Could not send code.');
+      setModalOpen(null);
+    }
+  }
+
+  async function submitOtp() {
+    if (otp.length !== 6) return Alert.alert('Invalid code', 'Enter the 6-digit code.');
+    if (modalOpen === 'change_email' && !newEmail.trim()) return Alert.alert('New email required');
+    if (modalOpen === 'change_password' && newPassword.length < 8) return Alert.alert('Weak password', 'Min 8 characters.');
+
+    setModalLoading(true);
+    try {
+      const body = { purpose: modalOpen, code: otp };
+      if (modalOpen === 'change_email')    body.newEmail = newEmail.trim();
+      if (modalOpen === 'change_password') body.newPassword = newPassword;
+      const res = await api.post('/auth/verify-email-otp', body);
+      updateUser(res.data.user);
+      setModalOpen(null);
+      Alert.alert('Done', 'Update applied.');
+    } catch (err) {
+      console.error('[Profile/otp-verify]', err.message);
+      Alert.alert('Error', err.response?.data?.error || 'Invalid or expired code.');
+    } finally {
+      setModalLoading(false);
+    }
+  }
+
+  const modalTitle = {
+    verify:          'Verify your email',
+    change_email:    'Change email',
+    change_password: 'Change password',
+  }[modalOpen];
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
 
-      <Text style={styles.sectionLabel}>Full Name</Text>
+      <Text style={styles.sectionHeader}>Identity</Text>
+
+      <View style={styles.identityRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.label}>Email</Text>
+          <Text style={styles.value}>{user?.email}</Text>
+        </View>
+        {user?.emailVerified ? (
+          <Text style={styles.verifiedBadge}>✓ Verified</Text>
+        ) : (
+          <TouchableOpacity onPress={() => startOtpFlow('verify')}>
+            <Text style={styles.link}>Verify</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <View style={styles.miniRow}>
+        <TouchableOpacity onPress={() => startOtpFlow('change_email')}>
+          <Text style={styles.link}>Change email</Text>
+        </TouchableOpacity>
+        <Text style={styles.dotSep}>·</Text>
+        <TouchableOpacity onPress={() => startOtpFlow('change_password')}>
+          <Text style={styles.link}>Change password</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={[styles.label, { marginTop: 18 }]}>Phone (optional)</Text>
+      <View style={styles.phoneRow}>
+        <TextInput
+          style={[styles.input, { flex: 1, marginBottom: 0 }]}
+          value={phone}
+          onChangeText={setPhone}
+          keyboardType="phone-pad"
+          placeholder="+8801XXXXXXXXX"
+        />
+        <TouchableOpacity style={styles.savePhoneBtn} onPress={handleSavePhone} disabled={loading}>
+          <Text style={styles.savePhoneText}>Save</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.hint}>Used only when you tap "Share Number?" in a chat.</Text>
+
+      {/* ─── Donor info ───────────────────────────────────────────────────── */}
+      <Text style={[styles.sectionHeader, { marginTop: 24 }]}>Donor info</Text>
+
+      <Text style={styles.label}>Full Name</Text>
       <TextInput
         style={styles.input}
         value={name}
@@ -95,10 +189,10 @@ export default function DonorProfileScreen({ navigation }) {
         placeholder="e.g. Rafiq Ahmed"
       />
 
-      <Text style={styles.sectionLabel}>Blood Group</Text>
+      <Text style={styles.label}>Blood Group</Text>
       <BloodGroupPicker value={bloodGroup} onChange={setBloodGroup} />
 
-      <Text style={[styles.sectionLabel, { marginTop: 20 }]}>District</Text>
+      <Text style={[styles.label, { marginTop: 20 }]}>District</Text>
       <TextInput
         style={styles.input}
         value={district}
@@ -106,7 +200,7 @@ export default function DonorProfileScreen({ navigation }) {
         placeholder="e.g. Dhaka, Chattogram, Sylhet"
       />
 
-      <Text style={[styles.sectionLabel, { marginTop: 4 }]}>Location (GPS)</Text>
+      <Text style={styles.label}>Location (GPS)</Text>
       <TouchableOpacity
         style={styles.locationButton}
         onPress={handleGetLocation}
@@ -127,7 +221,7 @@ export default function DonorProfileScreen({ navigation }) {
 
       <TouchableOpacity
         style={[styles.saveButton, loading && styles.buttonDisabled]}
-        onPress={handleSave}
+        onPress={handleSaveProfile}
         disabled={loading}
       >
         {loading
@@ -136,14 +230,13 @@ export default function DonorProfileScreen({ navigation }) {
         }
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.caregiversButton}
-        onPress={() => navigation.navigate('Caregivers')}
-      >
-        <Text style={styles.caregiversButtonText}>👥  Manage Emergency Caregivers</Text>
-        <Text style={styles.caregiversButtonSub}>
-          Notified by SMS if no donor responds in 30 min
-        </Text>
+      <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate('Favourites')}>
+        <Text style={styles.navButtonText}>♥  My Favourites</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate('Caregivers')}>
+        <Text style={styles.navButtonText}>👥  Manage Emergency Caregivers</Text>
+        <Text style={styles.navButtonSub}>Notified by SMS if no donor responds in 30 min</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -158,6 +251,62 @@ export default function DonorProfileScreen({ navigation }) {
         <Text style={styles.logoutButtonText}>Log Out</Text>
       </TouchableOpacity>
 
+      {/* ─── OTP modal ────────────────────────────────────────────────────── */}
+      <Modal visible={!!modalOpen} transparent animationType="fade" onRequestClose={() => setModalOpen(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{modalTitle}</Text>
+            <Text style={styles.modalSubtitle}>
+              We sent a 6-digit code to {user?.email}. Enter it below.
+            </Text>
+
+            {modalOpen === 'change_email' && (
+              <TextInput
+                style={styles.input}
+                value={newEmail}
+                onChangeText={setNewEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                placeholder="New email"
+              />
+            )}
+            {modalOpen === 'change_password' && (
+              <TextInput
+                style={styles.input}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                secureTextEntry
+                placeholder="New password (min. 8 chars)"
+              />
+            )}
+
+            <TextInput
+              style={[styles.input, styles.otpInput]}
+              value={otp}
+              onChangeText={setOtp}
+              keyboardType="number-pad"
+              maxLength={6}
+              placeholder="6-digit code"
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity onPress={() => setModalOpen(null)}>
+                <Text style={styles.link}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirm, modalLoading && styles.buttonDisabled]}
+                onPress={submitOtp}
+                disabled={modalLoading}
+              >
+                {modalLoading
+                  ? <ActivityIndicator color={COLORS.white} />
+                  : <Text style={styles.modalConfirmText}>Confirm</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -166,63 +315,87 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   content:   { padding: 20, paddingBottom: 40 },
 
-  sectionLabel: {
-    fontSize:     13,
-    fontWeight:   '600',
-    color:        COLORS.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom:  8,
+  sectionHeader: {
+    fontSize: 12, fontWeight: '700', color: COLORS.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12,
   },
+
+  label: {
+    fontSize: 13, fontWeight: '600', color: COLORS.textMuted,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+    marginBottom: 8, marginTop: 8,
+  },
+  value: { fontSize: 15, color: COLORS.text, fontWeight: '600', marginTop: 2 },
+  hint:  { fontSize: 11, color: COLORS.textMuted, marginTop: 4 },
+
+  identityRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: COLORS.white, borderRadius: 10,
+    padding: 14, borderWidth: 1, borderColor: COLORS.border,
+  },
+  verifiedBadge: { color: '#16A34A', fontWeight: '700', fontSize: 13 },
+  link:          { color: COLORS.primary, fontWeight: '600' },
+  miniRow:       { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 },
+  dotSep:        { color: COLORS.textMuted },
+
+  phoneRow: { flexDirection: 'row', gap: 8 },
+  savePhoneBtn: {
+    backgroundColor: COLORS.primary, borderRadius: 10,
+    paddingHorizontal: 18, justifyContent: 'center',
+  },
+  savePhoneText: { color: COLORS.white, fontWeight: '700' },
+
   input: {
-    borderWidth:       1,
-    borderColor:       COLORS.border,
-    borderRadius:      10,
-    paddingVertical:   14,
-    paddingHorizontal: 16,
-    fontSize:          15,
-    color:             COLORS.text,
-    backgroundColor:   COLORS.white,
-    marginBottom:      20,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
+    paddingVertical: 14, paddingHorizontal: 16, fontSize: 15,
+    color: COLORS.text, backgroundColor: COLORS.white, marginBottom: 16,
   },
 
   locationButton: {
-    borderWidth:   1,
-    borderColor:   COLORS.primary,
-    borderRadius:  10,
-    padding:       14,
-    alignItems:    'center',
+    borderWidth: 1, borderColor: COLORS.primary, borderRadius: 10,
+    padding: 14, alignItems: 'center',
   },
   locationButtonText: { color: COLORS.primary, fontWeight: '600', fontSize: 15 },
   coordsText:         { fontSize: 12, color: COLORS.textMuted, marginTop: 6, marginBottom: 20 },
 
   saveButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius:    12,
-    padding:         18,
-    alignItems:      'center',
-    marginTop:       24,
+    backgroundColor: COLORS.primary, borderRadius: 12,
+    padding: 18, alignItems: 'center', marginTop: 24,
   },
   buttonDisabled: { opacity: 0.6 },
   saveButtonText: { color: COLORS.white, fontSize: 16, fontWeight: '700' },
 
-  caregiversButton: {
-    borderWidth:   1,
-    borderColor:   COLORS.border,
-    borderRadius:  12,
-    padding:       16,
-    marginTop:     12,
+  navButton: {
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: 12,
+    padding: 16, marginTop: 12,
   },
-  caregiversButtonText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
-  caregiversButtonSub:  { fontSize: 12, color: COLORS.textMuted, marginTop: 3 },
+  navButtonText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+  navButtonSub:  { fontSize: 12, color: COLORS.textMuted, marginTop: 3 },
 
   logoutButton: {
-    borderWidth:   1,
-    borderColor:   '#EF4444',
-    borderRadius:  12,
-    padding:       16,
-    marginTop:     12,
-    alignItems:    'center',
+    borderWidth: 1, borderColor: '#EF4444', borderRadius: 12,
+    padding: 16, marginTop: 12, alignItems: 'center',
   },
   logoutButtonText: { fontSize: 15, fontWeight: '600', color: '#EF4444' },
+
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  modalCard: {
+    backgroundColor: COLORS.white, borderRadius: 16, padding: 24, width: '100%',
+  },
+  modalTitle:    { fontSize: 18, fontWeight: '700', color: COLORS.text },
+  modalSubtitle: { fontSize: 13, color: COLORS.textMuted, marginTop: 6, marginBottom: 16 },
+  otpInput: {
+    fontSize: 22, fontWeight: '700', letterSpacing: 6, textAlign: 'center',
+  },
+  modalActions: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8,
+  },
+  modalConfirm: {
+    backgroundColor: COLORS.primary, borderRadius: 10,
+    paddingHorizontal: 24, paddingVertical: 12,
+  },
+  modalConfirmText: { color: COLORS.white, fontWeight: '700' },
 });

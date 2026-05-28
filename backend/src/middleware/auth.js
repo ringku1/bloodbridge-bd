@@ -9,7 +9,7 @@
 //   });
 //
 // How JWTs work (quick summary for learning):
-//   1. On login, server signs a payload (userId, phone) with JWT_SECRET → token string
+//   1. On login, server signs a payload (userId, email) with JWT_SECRET → token string
 //   2. Client stores token and sends it in every request: "Authorization: Bearer <token>"
 //   3. This middleware verifies the signature — if tampered or expired, it rejects the request
 //   4. No database session needed — the token itself proves identity

@@ -25,7 +25,7 @@ export const useAuthStore = create(
       token: null,
       user:  null,
 
-      // Called after successful OTP verification
+      // Called after successful sign-in or sign-up
       login: (token, user) => set({ token, user }),
 
       // Called on logout or 401 — clears all auth state

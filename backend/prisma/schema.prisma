@@ -17,8 +17,6 @@ datasource db {
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
-// Enums are stored as strings in PostgreSQL.
-// The underscore format (A_POS) avoids issues with the "+" character in column values.
 
 enum BloodGroup {
   A_POS
@@ -54,50 +52,54 @@ enum ResponseStatus {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id             String         @id @default(uuid())
-  phone          String         @unique  // E.164 format: +8801XXXXXXXXX
-  phoneVerified  Boolean        @default(false)
-  name           String?
-  nidPhotoUrl    String?        // S3 key (not full URL) — generate presigned URL on demand
-  verifiedStatus VerifiedStatus @default(UNVERIFIED)
-  bloodGroup     BloodGroup?
-  latitude       Float?
-  longitude      Float?
-  district       String?
-  isAvailable    Boolean        @default(true)
-  lastDonatedAt  DateTime?
-  eligibleAgainAt DateTime?     // set to lastDonatedAt + 120 days on donation confirmation
-  fcmToken       String?        // Expo push notification token — registered via PUT /api/donors/fcm-token
-  createdAt      DateTime       @default(now())
+  id              String         @id @default(uuid())
+  email           String         @unique
+  emailVerified   Boolean        @default(false)
+  passwordHash    String
+  phone           String?        // optional profile field; shared via "Share Number" in chat
+  name            String?
+  nidPhotoUrl     String?        // S3 key (not full URL) — generate presigned URL on demand
+  verifiedStatus  VerifiedStatus @default(UNVERIFIED)
+  bloodGroup      BloodGroup?
+  latitude        Float?
+  longitude       Float?
+  district        String?
+  isAvailable     Boolean        @default(true)
+  lastDonatedAt   DateTime?
+  eligibleAgainAt DateTime?      // set to lastDonatedAt + 120 days on donation confirmation
+  fcmToken        String?        // Expo push notification token
+  createdAt       DateTime       @default(now())
 
-  requests   BloodRequest[]  @relation("RequesterRequests")
-  responses  DonorResponse[]
-  caregivers Caregiver[]
+  requests        BloodRequest[]  @relation("RequesterRequests")
+  responses       DonorResponse[]
+  caregivers      Caregiver[]
+  favourites      Favourite[]     @relation("FavouriteBy")
+  favouritedBy    Favourite[]     @relation("FavouritedBy")
 
-  @@index([verifiedStatus])                  // admin pending list + geo search pre-filter
-  @@index([isAvailable, verifiedStatus])     // PostGIS query WHERE clause
+  @@index([verifiedStatus])
+  @@index([isAvailable, verifiedStatus])
 }
 
 model BloodRequest {
-  id             String        @id @default(uuid())
-  requesterId    String
-  requester      User          @relation("RequesterRequests", fields: [requesterId], references: [id])
-  bloodGroup     BloodGroup
-  hospitalName   String
-  latitude       Float
-  longitude      Float
-  unitsNeeded    Int           @default(1)
-  status         RequestStatus @default(OPEN)
-  escalationLevel Int          @default(0)  // 0=initial, 1=expanded radius, 2=SMS caregivers
-  escalatedAt    DateTime?
-  expiresAt      DateTime
-  createdAt      DateTime      @default(now())
+  id              String        @id @default(uuid())
+  requesterId     String
+  requester       User          @relation("RequesterRequests", fields: [requesterId], references: [id])
+  bloodGroup      BloodGroup
+  hospitalName    String
+  latitude        Float
+  longitude       Float
+  unitsNeeded     Int           @default(1)
+  status          RequestStatus @default(OPEN)
+  escalationLevel Int           @default(0)
+  escalatedAt     DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime      @default(now())
 
   responses DonorResponse[]
 
-  @@index([status])                          // cron expiry/escalation query
-  @@index([requesterId])                     // GET /api/requests/active
-  @@index([status, escalationLevel])         // cron escalation level filter
+  @@index([status])
+  @@index([requesterId])
+  @@index([status, escalationLevel])
 }
 
 model DonorResponse {
@@ -107,16 +109,13 @@ model DonorResponse {
   donorId            String
   donor              User           @relation(fields: [donorId], references: [id], onDelete: Cascade)
   status             ResponseStatus @default(NOTIFIED)
-  proxySessionId     String?        // Twilio Proxy session SID
-  donorRevealed      Boolean        @default(false)  // donor chose to share their real phone number
-  requesterRevealed  Boolean        @default(false)  // requester chose to share their real phone number
   notifiedAt         DateTime       @default(now())
   respondedAt        DateTime?
   donatedConfirmedAt DateTime?
 
-  @@unique([requestId, donorId])  // a donor can only respond once per request
-  @@index([donorId])              // donor's history queries
-  @@index([requestId])            // request's responses list
+  @@unique([requestId, donorId])
+  @@index([donorId])
+  @@index([requestId])
 }
 
 model Caregiver {
@@ -125,7 +124,19 @@ model Caregiver {
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   name     String
   phone    String  // E.164 format
-  priority Int    @default(1)  // lower number = notified first
+  priority Int    @default(1)
 
-  @@unique([userId, phone])  // prevent duplicate caregiver numbers per user
+  @@unique([userId, phone])
+}
+
+model Favourite {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation("FavouriteBy", fields: [userId], references: [id], onDelete: Cascade)
+  favouriteId String
+  favourite   User     @relation("FavouritedBy", fields: [favouriteId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, favouriteId])
+  @@index([userId])
 }

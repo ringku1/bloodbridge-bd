@@ -204,7 +204,7 @@ router.get('/my-responses', async (req, res, next) => {
       include: {
         request: {
           include: {
-            requester: { select: { id: true, name: true, district: true, phone: true } },
+            requester: { select: { id: true, name: true, district: true } },
           },
         },
       },
@@ -212,6 +212,99 @@ router.get('/my-responses', async (req, res, next) => {
     });
 
     res.json({ responses });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── PUT /api/donors/phone ────────────────────────────────────────────────────
+// Body: { phone } — optional profile field, shared via the "Share Number" chat button.
+router.put('/phone', async (req, res, next) => {
+  try {
+    const { phone } = req.body;
+
+    if (phone !== null && (typeof phone !== 'string' || phone.trim().length === 0)) {
+      return res.status(400).json({ error: 'phone must be a non-empty string or null to clear' });
+    }
+
+    const cleaned = phone === null ? null : phone.trim();
+    if (cleaned && cleaned.length > 20) {
+      return res.status(400).json({ error: 'phone too long' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data:  { phone: cleaned },
+      select: { id: true, phone: true },
+    });
+
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /api/donors/favourites ───────────────────────────────────────────────
+router.get('/favourites', async (req, res, next) => {
+  try {
+    const favourites = await prisma.favourite.findMany({
+      where:   { userId: req.user.id },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        favourite: {
+          select: {
+            id:             true,
+            name:           true,
+            bloodGroup:     true,
+            district:       true,
+            emailVerified:  true,
+            verifiedStatus: true,
+          },
+        },
+      },
+    });
+
+    res.json({ favourites: favourites.map((f) => f.favourite) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/donors/favourites/:userId ──────────────────────────────────────
+// Idempotent — adding an existing favourite is a no-op (P2002 unique violation
+// is treated as success).
+router.post('/favourites/:userId', async (req, res, next) => {
+  try {
+    if (req.params.userId === req.user.id) {
+      return res.status(400).json({ error: 'You cannot favourite yourself' });
+    }
+
+    const target = await prisma.user.findUnique({ where: { id: req.params.userId } });
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    try {
+      await prisma.favourite.create({
+        data: { userId: req.user.id, favouriteId: target.id },
+      });
+    } catch (e) {
+      if (e.code !== 'P2002') throw e; // already favourited — treat as success
+    }
+
+    res.json({ message: 'Added to favourites' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── DELETE /api/donors/favourites/:userId ────────────────────────────────────
+router.delete('/favourites/:userId', async (req, res, next) => {
+  try {
+    await prisma.favourite.deleteMany({
+      where: { userId: req.user.id, favouriteId: req.params.userId },
+    });
+    res.json({ message: 'Removed from favourites' });
   } catch (err) {
     next(err);
   }
