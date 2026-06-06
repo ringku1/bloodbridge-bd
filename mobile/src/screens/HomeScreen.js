@@ -18,13 +18,15 @@ import { useFocusEffect } from '@react-navigation/native';
 import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { COLORS } from '../config';
-import { formatBloodGroup, formatDate } from '../utils/formatters';
+import { formatBloodGroup, formatDate, timeAgo } from '../utils/formatters';
 
 export default function HomeScreen({ navigation }) {
   const { user, updateUser } = useAuthStore();
-  const [eligibility, setEligibility] = useState(null);
-  const [loading, setLoading]         = useState(true);
-  const [toggling, setToggling]       = useState(false);
+  const [eligibility, setEligibility]       = useState(null);
+  const [loading, setLoading]               = useState(true);
+  const [toggling, setToggling]             = useState(false);
+  const [fetchError, setFetchError]         = useState(false);
+  const [lastFetchedAt, setLastFetchedAt]   = useState(null);
 
   useFocusEffect(useCallback(() => { fetchEligibility(); }, []));
 
@@ -32,8 +34,11 @@ export default function HomeScreen({ navigation }) {
     try {
       const res = await api.get('/donors/eligibility');
       setEligibility(res.data);
+      setFetchError(false);
+      setLastFetchedAt(new Date());
     } catch (err) {
       console.error('Failed to fetch eligibility:', err.message);
+      setFetchError(true);
     } finally {
       setLoading(false);
     }
@@ -41,6 +46,7 @@ export default function HomeScreen({ navigation }) {
 
   // Toggle the donor's availability (e.g. going on holiday → set unavailable)
   async function handleAvailabilityToggle(newValue) {
+    if (isLocked) return;
     setToggling(true);
     try {
       await api.put('/donors/availability', { isAvailable: newValue });
@@ -61,7 +67,10 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
-  const isAvailable = eligibility?.isAvailable ?? user?.isAvailable;
+  const isAvailable     = eligibility?.isAvailable ?? user?.isAvailable;
+  const eligibleAgainAt = eligibility?.eligibleAgainAt;
+  const isLocked        = !isAvailable && eligibleAgainAt
+    && new Date(eligibleAgainAt).getTime() > Date.now();
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -94,6 +103,16 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
+      {/* ── Eligibility fetch error banner ──────────────────────────────── */}
+      {fetchError && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>Couldn't load eligibility status.</Text>
+          <TouchableOpacity onPress={fetchEligibility}>
+            <Text style={styles.errorBannerLink}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* ── Eligibility card ────────────────────────────────────────────── */}
       <View style={[styles.eligibilityCard, isAvailable ? styles.eligibleCard : styles.ineligibleCard]}>
         {isAvailable ? (
@@ -116,21 +135,28 @@ export default function HomeScreen({ navigation }) {
         )}
       </View>
 
-      {/* ── Availability toggle ─────────────────────────────────────────── */}
-      {isAvailable && (
-        <View style={styles.row}>
-          <View>
-            <Text style={styles.rowLabel}>Show me as available</Text>
-            <Text style={styles.rowSub}>Turn off if you're traveling or unavailable</Text>
-          </View>
-          <Switch
-            value={user?.isAvailable ?? true}
-            onValueChange={handleAvailabilityToggle}
-            trackColor={{ true: COLORS.primary }}
-            disabled={toggling}
-          />
-        </View>
+      {/* ── Updated-ago indicator ───────────────────────────────────────── */}
+      {lastFetchedAt && (
+        <Text style={styles.updatedAgo}>Updated {timeAgo(lastFetchedAt)}</Text>
       )}
+
+      {/* ── Availability toggle ─────────────────────────────────────────── */}
+      <View style={[styles.row, isLocked && styles.rowDisabled]}>
+        <View style={styles.rowText}>
+          <Text style={styles.rowLabel}>Show me as available</Text>
+          <Text style={styles.rowSub}>
+            {isLocked
+              ? `You're locked from donating until ${formatDate(eligibleAgainAt)} (120-day post-donation wait).`
+              : "Turn off if you're traveling or unavailable"}
+          </Text>
+        </View>
+        <Switch
+          value={isAvailable ?? true}
+          onValueChange={handleAvailabilityToggle}
+          trackColor={{ true: COLORS.primary }}
+          disabled={toggling || isLocked}
+        />
+      </View>
 
       {/* ── Quick actions ───────────────────────────────────────────────── */}
       <TouchableOpacity
@@ -177,6 +203,20 @@ const styles = StyleSheet.create({
   },
   bloodBadgeText: { fontSize: 18, fontWeight: '800', color: COLORS.white },
 
+  errorBanner: {
+    backgroundColor: COLORS.primaryLight,
+    borderRadius:    10,
+    paddingVertical:   10,
+    paddingHorizontal: 14,
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'space-between',
+  },
+  errorBannerText: { fontSize: 13, color: COLORS.primaryDark, flex: 1 },
+  errorBannerLink: { fontSize: 13, color: COLORS.primaryDark, fontWeight: '700', marginLeft: 12 },
+
+  updatedAgo: { fontSize: 11, color: COLORS.textMuted, textAlign: 'center' },
+
   verificationBanner: {
     backgroundColor: '#FEF3C7',
     borderRadius:    12,
@@ -206,6 +246,8 @@ const styles = StyleSheet.create({
     alignItems:      'center',
     justifyContent:  'space-between',
   },
+  rowDisabled: { opacity: 0.5 },
+  rowText:  { flex: 1, marginRight: 12 },
   rowLabel: { fontSize: 15, fontWeight: '600', color: COLORS.text },
   rowSub:   { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
 
