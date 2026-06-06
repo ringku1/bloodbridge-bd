@@ -1,7 +1,7 @@
 // screens/FavouritesScreen.js
 //
 // List of users the current user has favourited.
-// Long-press a row to remove from favourites.
+// Tap the trailing × button to remove (long-press also works).
 
 import React, { useState, useCallback } from 'react';
 import {
@@ -55,22 +55,36 @@ export default function FavouritesScreen() {
     );
   }
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity style={styles.row} onLongPress={() => confirmRemove(item)} activeOpacity={0.7}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{(item.name || '?').charAt(0).toUpperCase()}</Text>
-      </View>
-      <View style={styles.info}>
-        <Text style={styles.name}>{item.name || 'Unknown'}</Text>
-        <Text style={styles.meta}>
-          {formatBloodGroup(item.bloodGroup)}{item.district ? ` • ${item.district}` : ''}
-        </Text>
-      </View>
-      {item.verifiedStatus === 'VERIFIED' && item.emailVerified && (
-        <Text style={styles.verified}>✓ Verified</Text>
-      )}
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item }) => {
+    const initials = (item.name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+    const isVerified = item.emailVerified === true && item.verifiedStatus === 'VERIFIED';
+    return (
+      <TouchableOpacity style={styles.row} onLongPress={() => confirmRemove(item)} activeOpacity={0.7}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{initials}</Text>
+        </View>
+        <View style={styles.info}>
+          <Text style={styles.name}>{item.name || 'Unknown'}</Text>
+          <Text style={styles.meta}>
+            {formatBloodGroup(item.bloodGroup)}{item.district ? ` • ${item.district}` : ''}
+          </Text>
+        </View>
+        {isVerified && (
+          <View style={styles.verifiedPill}>
+            <Text style={styles.verifiedPillText}>✓ VERIFIED</Text>
+          </View>
+        )}
+        <TouchableOpacity
+          style={styles.removeBtn}
+          onPress={() => confirmRemove(item)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel={`Remove ${item.name || 'user'} from favourites`}
+        >
+          <Text style={styles.removeBtnText}>✕</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -93,11 +107,6 @@ export default function FavouritesScreen() {
           tintColor={COLORS.primary}
         />
       }
-      ListHeaderComponent={
-        favourites.length > 0
-          ? <Text style={styles.hint}>Long-press a row to remove from favourites.</Text>
-          : null
-      }
       ListEmptyComponent={
         <View style={styles.empty}>
           <Text style={styles.emptyText}>No favourites yet.</Text>
@@ -113,15 +122,16 @@ export default function FavouritesScreen() {
 const styles = StyleSheet.create({
   list:   { padding: 16 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  hint:   { fontSize: 12, color: COLORS.textMuted, marginBottom: 12, paddingHorizontal: 4 },
 
   row: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.white, borderRadius: 12, padding: 14, marginBottom: 10,
+    backgroundColor: COLORS.white, borderRadius: 12,
+    paddingVertical: 14, paddingHorizontal: 14, marginBottom: 10,
+    minHeight: 56,
     borderWidth: 1, borderColor: COLORS.border,
   },
   avatar: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 48, height: 48, borderRadius: 24,
     backgroundColor: COLORS.primaryLight,
     alignItems: 'center', justifyContent: 'center',
     marginRight: 12,
@@ -130,7 +140,21 @@ const styles = StyleSheet.create({
   info:       { flex: 1 },
   name:       { fontSize: 15, fontWeight: '600', color: COLORS.text },
   meta:       { fontSize: 13, color: COLORS.textMuted, marginTop: 2 },
-  verified:   { fontSize: 12, color: '#16A34A', fontWeight: '600' },
+
+  verifiedPill: {
+    backgroundColor: '#DCFCE7',
+    paddingVertical: 4, paddingHorizontal: 8,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  verifiedPillText: { fontSize: 11, fontWeight: '600', color: '#15803D' },
+
+  removeBtn: {
+    width: 44, height: 44,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: -8,
+  },
+  removeBtnText: { fontSize: 20, color: COLORS.textMuted, fontWeight: '600' },
 
   empty:    { paddingTop: 80, alignItems: 'center' },
   emptyText: { fontSize: 16, color: COLORS.text, fontWeight: '600' },
