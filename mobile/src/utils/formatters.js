@@ -56,7 +56,7 @@ export function timeAgo(dateString) {
 export function formatRequestStatus(status) {
   const map = {
     OPEN:      { label: 'Open',      color: COLORS.warning },
-    MATCHED:   { label: 'Matched',   color: '#2563EB' },
+    MATCHED:   { label: 'Matched',   color: COLORS.info },
     FULFILLED: { label: 'Fulfilled', color: COLORS.success },
     EXPIRED:   { label: 'Expired',   color: COLORS.textMuted },
   };

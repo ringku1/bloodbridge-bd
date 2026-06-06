@@ -29,6 +29,7 @@ export const COLORS = {
   primaryLight: '#FEE2E2',
   success:      '#16A34A',
   warning:      '#D97706',
+  info:         '#2563EB',
   text:         '#111827',
   textMuted:    '#6B7280',
   border:       '#E5E7EB',
