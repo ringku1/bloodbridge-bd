@@ -3,10 +3,11 @@
 // All open blood requests across the country.
 // Donors can browse and pick one to accept.
 //
-// Accept is only enabled when the request's blood group matches the donor's.
-// Other rows still show full info so the user can share or read context.
+// Cards whose blood group does not match the donor are dimmed entirely:
+// no Accept button, just a "Not your blood group" chip. Matching cards
+// keep the vivid red badge and primary-colored Accept button.
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   RefreshControl, ActivityIndicator, Alert,
@@ -20,14 +21,16 @@ import { COLORS } from '../config';
 export default function BrowseRequestsScreen({ navigation }) {
   const user = useAuthStore((s) => s.user);
 
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [requests, setRequests]         = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [lastFetchedAt, setLastFetchedAt] = useState(null);
 
   async function fetchRequests() {
     try {
       const res = await api.get('/requests/browse');
       setRequests(res.data.requests ?? []);
+      setLastFetchedAt(new Date().toISOString());
     } catch (err) {
       console.error('[Browse]', err.message);
     } finally {
@@ -69,7 +72,7 @@ export default function BrowseRequestsScreen({ navigation }) {
   const renderItem = ({ item }) => {
     const matches = item.bloodGroup === user?.bloodGroup;
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, !matches && styles.cardDimmed]}>
         <View style={styles.cardHeader}>
           <View style={[styles.bgBadge, matches && styles.bgBadgeMatch]}>
             <Text style={[styles.bgText, matches && styles.bgTextMatch]}>
@@ -87,20 +90,29 @@ export default function BrowseRequestsScreen({ navigation }) {
           {item.unitsNeeded} unit{item.unitsNeeded !== 1 ? 's' : ''} needed
         </Text>
 
-        <TouchableOpacity
-          style={[styles.acceptBtn, !matches && styles.acceptBtnDisabled]}
-          onPress={() => handleAccept(item)}
-          disabled={!matches}
-        >
-          <Text style={[styles.acceptBtnText, !matches && styles.acceptBtnTextDisabled]}>
-            {matches
-              ? 'Accept'
-              : `Only ${formatBloodGroup(item.bloodGroup)} donors can accept`}
-          </Text>
-        </TouchableOpacity>
+        {matches ? (
+          <TouchableOpacity style={styles.acceptBtn} onPress={() => handleAccept(item)}>
+            <Text style={styles.acceptBtnText}>Accept</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.notMatchChip}>
+            <Text style={styles.notMatchChipText}>Not your blood group</Text>
+          </View>
+        )}
       </View>
     );
   };
+
+  const listHeader = (
+    <View style={styles.header}>
+      <Text style={styles.headerCount}>
+        {requests.length} open request{requests.length === 1 ? '' : 's'}
+      </Text>
+      {lastFetchedAt ? (
+        <Text style={styles.headerUpdated}>Updated {timeAgo(lastFetchedAt)}</Text>
+      ) : null}
+    </View>
+  );
 
   if (loading) {
     return (
@@ -116,6 +128,7 @@ export default function BrowseRequestsScreen({ navigation }) {
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
       contentContainerStyle={styles.list}
+      ListHeaderComponent={listHeader}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -140,6 +153,15 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 16, color: COLORS.textMuted, fontWeight: '600' },
   emptySub:  { fontSize: 13, color: COLORS.textMuted, marginTop: 6 },
 
+  header: {
+    flexDirection:  'row',
+    alignItems:     'baseline',
+    justifyContent: 'space-between',
+    marginBottom:   10,
+  },
+  headerCount:   { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  headerUpdated: { fontSize: 12, color: COLORS.textMuted },
+
   card: {
     backgroundColor: COLORS.white,
     borderRadius:    12,
@@ -148,6 +170,7 @@ const styles = StyleSheet.create({
     borderWidth:     1,
     borderColor:     COLORS.border,
   },
+  cardDimmed: { borderColor: COLORS.background },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   bgBadge: {
     paddingHorizontal: 12, paddingVertical: 4,
@@ -168,10 +191,17 @@ const styles = StyleSheet.create({
     alignItems:      'center',
     marginTop:       14,
   },
-  acceptBtnDisabled: {
-    backgroundColor: COLORS.background,
-    borderWidth: 1, borderColor: COLORS.border,
+  acceptBtnText: { color: COLORS.white, fontSize: 14, fontWeight: '700' },
+
+  notMatchChip: {
+    alignSelf:         'flex-start',
+    marginTop:         12,
+    paddingHorizontal: 10,
+    paddingVertical:   4,
+    borderRadius:      999,
+    backgroundColor:   COLORS.background,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
   },
-  acceptBtnText:         { color: COLORS.white, fontSize: 14, fontWeight: '700' },
-  acceptBtnTextDisabled: { color: COLORS.textMuted, fontWeight: '600' },
+  notMatchChipText: { fontSize: 12, color: COLORS.textMuted, fontWeight: '600' },
 });
