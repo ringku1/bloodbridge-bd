@@ -116,22 +116,29 @@ export default function ActiveRequestScreen() {
         )}
 
         {acceptedDonors.length === 0 ? (
-          <Text style={styles.waitingText}>⏳ Waiting for a donor to accept…</Text>
+          <View style={styles.waitingBanner}>
+            <Text style={styles.waitingIcon}>⏳</Text>
+            <Text style={styles.waitingBannerText}>Waiting for a donor to accept…</Text>
+          </View>
         ) : (
           acceptedDonors.map((response) => {
             const donorId = response.donorId;
             const isFav   = favourites.has(donorId);
+            const acceptedAt = response.respondedAt || response.notifiedAt;
             return (
-              <View key={response.id} style={styles.donorRow}>
-                <View style={{ flex: 1 }}>
+              <View key={response.id} style={styles.donorBlock}>
+                <View style={styles.donorMeta}>
                   <Text style={styles.donorName}>{response.donor?.name || 'Donor'}</Text>
                   <Text style={styles.donorVerified}>
-                    {response.donor?.verifiedStatus === 'VERIFIED' ? '✅ Verified' : '⚠️ Unverified'}
+                    {response.donor?.verifiedStatus === 'VERIFIED' ? '✅ Verified' : 'Unverified'}
                   </Text>
+                  {acceptedAt && (
+                    <Text style={styles.acceptedAgo}>Accepted {timeAgo(acceptedAt)}</Text>
+                  )}
                 </View>
                 <View style={styles.donorActions}>
                   <TouchableOpacity
-                    style={styles.chatBtn}
+                    style={styles.actionBtn}
                     onPress={() => {
                       if (!req?.id) return;
                       navigation.navigate('Chat', {
@@ -140,22 +147,22 @@ export default function ActiveRequestScreen() {
                       });
                     }}
                   >
-                    <Text style={styles.chatBtnText}>💬</Text>
+                    <Text style={styles.actionBtnText}>💬  Chat</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.favBtn}
+                    style={styles.actionBtn}
                     onPress={() => toggleFavourite(donorId)}
                   >
-                    <Text style={styles.favBtnText}>{isFav ? '♥' : '♡'}</Text>
+                    <Text style={styles.actionBtnText}>{isFav ? '♥  Favourited' : '♡  Favourite'}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.confirmBtn}
+                    style={[styles.confirmBtn, confirmingId === donorId && styles.buttonDisabled]}
                     onPress={() => handleConfirmDonation(req.id, donorId)}
                     disabled={confirmingId === donorId}
                   >
                     {confirmingId === donorId
                       ? <ActivityIndicator size="small" color={COLORS.white} />
-                      : <Text style={styles.confirmBtnText}>✓ Confirm</Text>
+                      : <Text style={styles.confirmBtnText}>✓  Confirm</Text>
                     }
                   </TouchableOpacity>
                 </View>
@@ -212,31 +219,36 @@ const styles = StyleSheet.create({
   escalationNote: { backgroundColor: '#FEF3C7', borderRadius: 8, padding: 10 },
   escalationText: { fontSize: 13, color: '#92400E' },
 
-  waitingText: { fontSize: 14, color: COLORS.textMuted, textAlign: 'center', paddingVertical: 8 },
-
-  donorRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12,
+  waitingBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#FEF3C7', borderRadius: 8, padding: 12, gap: 8,
   },
+  waitingIcon:        { fontSize: 18 },
+  waitingBannerText:  { fontSize: 14, color: '#92400E', fontWeight: '600', flex: 1 },
+
+  donorBlock: {
+    borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12, gap: 10,
+  },
+  donorMeta:     { gap: 2 },
   donorName:     { fontSize: 15, fontWeight: '600', color: COLORS.text },
-  donorVerified: { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
+  donorVerified: { fontSize: 12, color: COLORS.textMuted },
+  acceptedAgo:   { fontSize: 11, color: COLORS.textMuted, fontStyle: 'italic' },
 
   donorActions: { flexDirection: 'row', gap: 8 },
-  chatBtn: {
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 8,
+  actionBtn: {
+    flex: 1, minHeight: 44,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 8,
   },
-  chatBtnText: { fontSize: 16 },
-  favBtn: {
-    borderWidth: 1, borderColor: COLORS.border, borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 8,
-  },
-  favBtnText: { fontSize: 16, color: COLORS.primary },
+  actionBtnText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   confirmBtn: {
-    backgroundColor: COLORS.success, borderRadius: 8,
-    paddingHorizontal: 12, paddingVertical: 8,
+    flex: 1, minHeight: 44,
+    backgroundColor: COLORS.warning, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
   },
-  confirmBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 13 },
+  confirmBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
+  buttonDisabled: { opacity: 0.5 },
 
   emptyState:    { alignItems: 'center', paddingTop: 80 },
   emptyIcon:     { fontSize: 48, marginBottom: 16 },

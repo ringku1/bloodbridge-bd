@@ -13,7 +13,7 @@
 
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
+  View, Text, Image, StyleSheet, TouchableOpacity,
   ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -51,6 +51,7 @@ export default function VerificationScreen() {
   const { user, updateUser }  = useAuthStore();
   const [uploading, setUploading] = useState(false);
   const [status, setStatus]       = useState(user?.verifiedStatus || 'UNVERIFIED');
+  const [pickedAsset, setPickedAsset] = useState(null); // { uri, mimeType, fileSize }
 
   // Re-fetch every time the user navigates to this screen so admin approvals
   // are reflected without needing a full app restart.
@@ -66,11 +67,9 @@ export default function VerificationScreen() {
     }
   }
 
-  async function handleUpload() {
-    // Explicitly request permission on Android before opening the picker.
-    // On iOS this is handled automatically by the OS on first access.
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
+  async function pickPhoto() {
+    const { status: perm } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm !== 'granted') {
       Alert.alert(
         'Permission required',
         'Please allow access to your photo library in Settings to upload your NID photo.'
@@ -85,42 +84,53 @@ export default function VerificationScreen() {
     });
 
     if (result.canceled) return;
+    setPickedAsset(result.assets[0]);
+  }
 
-    const asset = result.assets[0];
+  async function handleUpload() {
+    if (!pickedAsset) {
+      await pickPhoto();
+      return;
+    }
+
     setUploading(true);
 
     try {
-      // Use the api axios client so the JWT token and 60s timeout interceptors
-      // apply automatically. React Native handles the multipart boundary when
-      // Content-Type is set to multipart/form-data.
       const formData = new FormData();
       formData.append('photo', {
-        uri:  asset.uri,
-        type: asset.mimeType || 'image/jpeg',
+        uri:  pickedAsset.uri,
+        type: pickedAsset.mimeType || 'image/jpeg',
         name: 'nid.jpg',
       });
 
       const uploadRes = await api.post('/verify/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        transformRequest: (data) => data, // prevent axios from JSON-serializing FormData
+        transformRequest: (data) => data,
       });
       const { s3Key } = uploadRes.data;
 
-      // Tell the backend which key to store against this user's profile.
       await api.post('/verify/submit', { s3Key });
 
       setStatus('PENDING');
       updateUser({ verifiedStatus: 'PENDING' });
+      setPickedAsset(null);
 
       Alert.alert(
         'Submitted!',
-        "Your NID photo has been submitted for review. We'll notify you once it's approved."
+        "Your NID photo is under review. We'll notify you once it's approved (typically 1–2 business days)."
       );
     } catch (err) {
       Alert.alert('Upload failed', err.response?.data?.error || err.message || 'Please try again.');
     } finally {
       setUploading(false);
     }
+  }
+
+  function formatFileSize(bytes) {
+    if (!bytes) return null;
+    return bytes < 1024 * 1024
+      ? `${Math.round(bytes / 1024)} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.UNVERIFIED;
@@ -135,7 +145,7 @@ export default function VerificationScreen() {
         <Text style={styles.statusDesc}>{config.desc}</Text>
       </View>
 
-      {/* Upload button — only shown when not yet submitted */}
+      {/* Upload flow — when not yet submitted */}
       {status === 'UNVERIFIED' && (
         <>
           <View style={styles.instructions}>
@@ -150,6 +160,22 @@ export default function VerificationScreen() {
             ))}
           </View>
 
+          {pickedAsset && (
+            <View style={styles.previewCard}>
+              <Image source={{ uri: pickedAsset.uri }} style={styles.preview} />
+              {pickedAsset.fileSize ? (
+                <Text style={styles.fileSize}>Photo size: {formatFileSize(pickedAsset.fileSize)}</Text>
+              ) : null}
+              <TouchableOpacity
+                style={styles.retakeButton}
+                onPress={pickPhoto}
+                disabled={uploading}
+              >
+                <Text style={styles.retakeButtonText}>↺  Retake / choose another</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[styles.uploadButton, uploading && styles.buttonDisabled]}
             onPress={handleUpload}
@@ -161,7 +187,9 @@ export default function VerificationScreen() {
                 <Text style={styles.uploadButtonText}> Uploading…</Text>
               </>
             ) : (
-              <Text style={styles.uploadButtonText}>📷  Upload NID Photo</Text>
+              <Text style={styles.uploadButtonText}>
+                {pickedAsset ? '✓  Confirm & Upload' : '📷  Choose NID Photo'}
+              </Text>
             )}
           </TouchableOpacity>
         </>
@@ -171,7 +199,7 @@ export default function VerificationScreen() {
       {status === 'PENDING' && (
         <TouchableOpacity
           style={styles.reuploadButton}
-          onPress={handleUpload}
+          onPress={() => { setPickedAsset(null); setStatus('UNVERIFIED'); }}
           disabled={uploading}
         >
           <Text style={styles.reuploadButtonText}>Re-upload NID photo</Text>
@@ -205,6 +233,24 @@ const styles = StyleSheet.create({
   instructionsTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text, marginBottom: 4 },
   tip:               { fontSize: 13, color: COLORS.textMuted },
 
+  previewCard: {
+    backgroundColor: COLORS.white,
+    borderRadius:    12,
+    padding:         12,
+    alignItems:      'center',
+    gap:             10,
+  },
+  preview: {
+    width: 240, height: 240, borderRadius: 10,
+    backgroundColor: COLORS.background,
+  },
+  fileSize: { fontSize: 12, color: COLORS.textMuted },
+  retakeButton: {
+    borderWidth: 1, borderColor: COLORS.primary, borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 16,
+  },
+  retakeButtonText: { color: COLORS.primary, fontWeight: '600', fontSize: 14 },
+
   uploadButton: {
     backgroundColor: COLORS.primary,
     borderRadius:    12,
@@ -214,7 +260,7 @@ const styles = StyleSheet.create({
     justifyContent:  'center',
     gap:             8,
   },
-  buttonDisabled:   { opacity: 0.6 },
+  buttonDisabled:   { opacity: 0.5 },
   uploadButtonText: { color: COLORS.white, fontSize: 16, fontWeight: '700' },
 
   reuploadButton: {

@@ -181,14 +181,18 @@ const styles = StyleSheet.create({
   actions: { borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12, gap: 8 },
 
   chatBtn: {
+    minHeight: 44,
     borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
-    padding: 12, alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
   chatBtnText: { color: COLORS.text, fontWeight: '600', fontSize: 14 },
 
   favBtn: {
+    minHeight: 44,
     borderWidth: 1, borderColor: COLORS.border, borderRadius: 10,
-    padding: 12, alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
   favBtnText: { color: COLORS.primary, fontWeight: '600', fontSize: 14 },
 

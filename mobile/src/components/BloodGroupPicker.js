@@ -6,13 +6,14 @@
 // Props:
 //   value    — currently selected value (e.g. "A_POS") or null
 //   onChange — called with new value when user taps a button
+//   error    — when truthy, the entire picker tints red (for required-but-empty state)
 
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
-import { BLOOD_GROUPS, formatBloodGroup } from '../utils/formatters';
+import { BLOOD_GROUPS } from '../utils/formatters';
 import { COLORS } from '../config';
 
-export default function BloodGroupPicker({ value, onChange }) {
+export default function BloodGroupPicker({ value, onChange, error }) {
   return (
     <View style={styles.grid}>
       {BLOOD_GROUPS.map((bg) => {
@@ -21,7 +22,11 @@ export default function BloodGroupPicker({ value, onChange }) {
           <TouchableOpacity
             key={bg.value}
             onPress={() => onChange(bg.value)}
-            style={[styles.button, selected && styles.buttonSelected]}
+            style={[
+              styles.button,
+              selected && styles.buttonSelected,
+              error && !selected && styles.buttonError,
+            ]}
             activeOpacity={0.7}
           >
             <Text style={[styles.label, selected && styles.labelSelected]}>
@@ -53,6 +58,9 @@ const styles = StyleSheet.create({
   buttonSelected: {
     borderColor:     COLORS.primary,
     backgroundColor: COLORS.primaryLight,
+  },
+  buttonError: {
+    borderColor: '#EF4444',
   },
   label: {
     fontSize:   16,

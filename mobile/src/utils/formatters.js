@@ -4,6 +4,8 @@
 // The backend stores data in a compact format (e.g. "A_POS", "2026-04-22T...").
 // These functions convert them to human-readable strings.
 
+import { COLORS } from '../config';
+
 // Map backend blood group enum values → display labels
 const BLOOD_GROUP_LABELS = {
   A_POS:  'A+',
@@ -53,10 +55,10 @@ export function timeAgo(dateString) {
 // Map request status → { label, color }
 export function formatRequestStatus(status) {
   const map = {
-    OPEN:      { label: 'Open',      color: '#D97706' },
+    OPEN:      { label: 'Open',      color: COLORS.warning },
     MATCHED:   { label: 'Matched',   color: '#2563EB' },
-    FULFILLED: { label: 'Fulfilled', color: '#16A34A' },
-    EXPIRED:   { label: 'Expired',   color: '#6B7280' },
+    FULFILLED: { label: 'Fulfilled', color: COLORS.success },
+    EXPIRED:   { label: 'Expired',   color: COLORS.textMuted },
   };
-  return map[status] || { label: status, color: '#6B7280' };
+  return map[status] || { label: status, color: COLORS.textMuted };
 }

@@ -24,8 +24,14 @@ export default function CaregiversScreen() {
 
   // Form state
   const [name, setName]       = useState('');
+  const [nameError, setNameError] = useState('');
   const [phone, setPhone]     = useState('+880');
+  const [phoneError, setPhoneError] = useState('');
   const [saving, setSaving]   = useState(false);
+
+  const phoneValid = /^\+880[1-9]\d{9}$/.test(phone);
+  const nameValid  = name.trim().length > 0;
+  const formValid  = nameValid && phoneValid && !nameError && !phoneError;
 
   useEffect(() => {
     fetchCaregivers();
@@ -46,18 +52,15 @@ export default function CaregiversScreen() {
   const onRefresh = useCallback(() => fetchCaregivers(), []);
 
   async function handleAdd() {
-    if (!name.trim()) return Alert.alert('Required', 'Enter the caregiver\'s name.');
-    if (!/^\+880[1-9]\d{9}$/.test(phone)) {
-      return Alert.alert('Invalid phone', 'Enter a valid Bangladeshi number: +8801XXXXXXXXX');
-    }
+    if (!formValid) return;
 
     setSaving(true);
     try {
       const res = await api.post('/caregivers', { name: name.trim(), phone });
       setCaregivers((prev) => [...prev, res.data.caregiver]);
       setModalVisible(false);
-      setName('');
-      setPhone('+880');
+      setName(''); setNameError('');
+      setPhone('+880'); setPhoneError('');
     } catch (err) {
       Alert.alert('Error', err.response?.data?.error || 'Could not add caregiver.');
     } finally {
@@ -170,33 +173,45 @@ export default function CaregiversScreen() {
 
             <Text style={styles.fieldLabel}>Full Name</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, nameError && styles.inputError]}
               value={name}
-              onChangeText={setName}
+              onChangeText={(v) => { setName(v); if (nameError) setNameError(''); }}
+              onBlur={() => setNameError(name.trim() ? '' : 'Name is required')}
               placeholder="e.g. Karim Ahmed"
+              placeholderTextColor={COLORS.textMuted}
               autoFocus
             />
+            {nameError ? <Text style={styles.errorText}>{nameError}</Text> : null}
 
-            <Text style={styles.fieldLabel}>Phone Number</Text>
+            <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Phone Number</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, phoneError && styles.inputError]}
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={(v) => { setPhone(v); if (phoneError) setPhoneError(''); }}
+              onBlur={() => setPhoneError(phoneValid ? '' : 'Use +8801XXXXXXXXX format')}
               keyboardType="phone-pad"
-              placeholder="+8801XXXXXXXXX"
+              placeholder="+8801712345678"
+              placeholderTextColor={COLORS.textMuted}
             />
+            {phoneError
+              ? <Text style={styles.errorText}>{phoneError}</Text>
+              : <Text style={styles.helper}>Bangladeshi number, e.g. +8801712345678</Text>}
 
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.cancelBtn}
-                onPress={() => { setModalVisible(false); setName(''); setPhone('+880'); }}
+                onPress={() => {
+                  setModalVisible(false);
+                  setName(''); setNameError('');
+                  setPhone('+880'); setPhoneError('');
+                }}
               >
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.saveBtn, saving && { opacity: 0.6 }]}
+                style={[styles.saveBtn, (!formValid || saving) && styles.buttonDisabled]}
                 onPress={handleAdd}
-                disabled={saving}
+                disabled={!formValid || saving}
               >
                 {saving
                   ? <ActivityIndicator color={COLORS.white} size="small" />
@@ -299,8 +314,12 @@ const styles = StyleSheet.create({
     padding:           14,
     fontSize:          15,
     color:             COLORS.text,
-    marginBottom:      16,
+    backgroundColor:   COLORS.white,
   },
+  inputError: { borderColor: '#EF4444' },
+  errorText:  { fontSize: 12, color: '#EF4444', marginTop: 4 },
+  helper:     { fontSize: 12, color: COLORS.textMuted, marginTop: 4 },
+  buttonDisabled: { opacity: 0.5 },
   modalActions:  { flexDirection: 'row', gap: 12, marginTop: 4 },
   cancelBtn: {
     flex:         1,

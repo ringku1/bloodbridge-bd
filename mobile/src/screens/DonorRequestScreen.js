@@ -15,11 +15,19 @@ import {
   ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
 import api from '../services/api';
+import { useAuthStore } from '../store/authStore';
 import { COLORS } from '../config';
 import { formatBloodGroup, timeAgo } from '../utils/formatters';
 
+const CLOSED_MESSAGES = {
+  MATCHED:   'Already matched with another donor.',
+  FULFILLED: 'Donation completed for this request.',
+  EXPIRED:   'This request has expired.',
+};
+
 export default function DonorRequestScreen({ route, navigation }) {
   const { requestId } = route.params;
+  const userBloodGroup = useAuthStore((s) => s.user?.bloodGroup);
 
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -83,6 +91,8 @@ export default function DonorRequestScreen({ route, navigation }) {
   if (!request) return null;
 
   const isOpen = request.status === 'OPEN';
+  const matches = userBloodGroup && userBloodGroup === request.bloodGroup;
+  const closedMessage = CLOSED_MESSAGES[request.status] || 'This request is no longer open.';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -93,6 +103,17 @@ export default function DonorRequestScreen({ route, navigation }) {
         <Text style={styles.urgencyText}>Urgent blood needed nearby</Text>
         <Text style={styles.urgencyTime}>{timeAgo(request.createdAt)}</Text>
       </View>
+
+      {/* Match indicator */}
+      {userBloodGroup && (
+        <View style={[styles.matchBanner, matches ? styles.matchOk : styles.matchMismatch]}>
+          <Text style={[styles.matchText, matches ? styles.matchTextOk : styles.matchTextMismatch]}>
+            {matches
+              ? `✓ You can donate ${formatBloodGroup(request.bloodGroup)} blood`
+              : `Requires ${formatBloodGroup(request.bloodGroup)} donors — your group is ${formatBloodGroup(userBloodGroup)}`}
+          </Text>
+        </View>
+      )}
 
       {/* Blood group */}
       <View style={styles.bloodGroupCard}>
@@ -114,8 +135,18 @@ export default function DonorRequestScreen({ route, navigation }) {
         />
       </View>
 
+      {/* What happens next */}
+      {isOpen && matches && (
+        <View style={styles.stepsCard}>
+          <Text style={styles.stepsHeader}>What happens next</Text>
+          <Step n={1} text="Tap Accept to confirm you can donate" />
+          <Step n={2} text="A 1-hour chat opens with the requester" />
+          <Step n={3} text={`Go to ${request.hospitalName} as soon as possible`} />
+        </View>
+      )}
+
       {/* Status / action */}
-      {isOpen ? (
+      {isOpen && matches ? (
         <TouchableOpacity
           style={[styles.acceptButton, accepting && styles.buttonDisabled]}
           onPress={handleAccept}
@@ -123,16 +154,14 @@ export default function DonorRequestScreen({ route, navigation }) {
         >
           {accepting
             ? <ActivityIndicator color={COLORS.white} />
-            : <Text style={styles.acceptButtonText}>✅  I will donate blood</Text>
+            : <Text style={styles.acceptButtonText}>I will donate blood</Text>
           }
         </TouchableOpacity>
-      ) : (
+      ) : !isOpen ? (
         <View style={styles.closedBanner}>
-          <Text style={styles.closedText}>
-            This request is no longer open ({request.status.toLowerCase()}).
-          </Text>
+          <Text style={styles.closedText}>{closedMessage}</Text>
         </View>
-      )}
+      ) : null}
 
       <Text style={styles.disclaimer}>
         By accepting, you agree to go to the hospital and donate blood as soon as possible.
@@ -140,6 +169,15 @@ export default function DonorRequestScreen({ route, navigation }) {
       </Text>
 
     </ScrollView>
+  );
+}
+
+function Step({ n, text }) {
+  return (
+    <View style={styles.stepRow}>
+      <View style={styles.stepNumber}><Text style={styles.stepNumberText}>{n}</Text></View>
+      <Text style={styles.stepText}>{text}</Text>
+    </View>
   );
 }
 
@@ -170,6 +208,26 @@ const styles = StyleSheet.create({
   urgencyIcon: { fontSize: 32 },
   urgencyText: { fontSize: 17, fontWeight: '700', color: '#991B1B' },
   urgencyTime: { fontSize: 12, color: '#B91C1C' },
+
+  matchBanner: { borderRadius: 10, padding: 12 },
+  matchOk:       { backgroundColor: '#DCFCE7' },
+  matchMismatch: { backgroundColor: '#FEE2E2' },
+  matchText:         { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  matchTextOk:       { color: '#15803D' },
+  matchTextMismatch: { color: '#B91C1C' },
+
+  stepsCard: {
+    backgroundColor: COLORS.white, borderRadius: 14, padding: 16, gap: 12,
+  },
+  stepsHeader: { fontSize: 13, fontWeight: '700', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  stepRow:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stepNumber: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  stepNumberText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
+  stepText:       { flex: 1, fontSize: 14, color: COLORS.text },
 
   bloodGroupCard: {
     backgroundColor: COLORS.primary,
