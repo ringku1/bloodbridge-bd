@@ -90,7 +90,7 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 | File storage | Backblaze B2 in production (S3-compatible, free 10 GB); MinIO in dev |
 | Admin dashboard | Next.js 15 (app router) |
 | Infrastructure | Docker + docker-compose |
-| CI/CD | GitHub Actions + Dependabot |
+| CI/CD | GitHub Actions |
 
 ---
 
@@ -100,10 +100,9 @@ Blood Bridge connects people who urgently need blood with nearby verified donors
 Blood-Bridge/
 │
 ├── .github/
-│   ├── workflows/
-│   │   ├── ci.yml                # CI: audit, migrate, test, Docker build
-│   │   └── deploy.yml            # Manual deploy: backend | admin | cloudflare-worker | all
-│   └── dependabot.yml            # Weekly automated dependency PRs
+│   └── workflows/
+│       ├── ci.yml                # CI: audit, migrate, test, Docker build
+│       └── deploy.yml            # Manual deploy: backend | admin | cloudflare-worker | all
 │
 ├── backend/
 │   ├── src/
