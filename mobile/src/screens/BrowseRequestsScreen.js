@@ -26,6 +26,11 @@ export default function BrowseRequestsScreen({ navigation }) {
   const [refreshing, setRefreshing]     = useState(false);
   const [lastFetchedAt, setLastFetchedAt] = useState(null);
 
+  // Donor is locked from accepting if they're explicitly unavailable OR within
+  // the 120-day post-donation wait. Backend remains source of truth; this is a UX hint.
+  const lockedUntil = user?.eligibleAgainAt ? new Date(user.eligibleAgainAt) : null;
+  const isLocked    = !user?.isAvailable || (lockedUntil && lockedUntil > new Date());
+
   async function fetchRequests() {
     try {
       const res = await api.get('/requests/browse');
@@ -47,6 +52,16 @@ export default function BrowseRequestsScreen({ navigation }) {
 
   async function handleAccept(request) {
     if (request.bloodGroup !== user?.bloodGroup) return;
+    if (isLocked) {
+      const dateStr = lockedUntil ? lockedUntil.toDateString() : null;
+      Alert.alert(
+        'You are locked',
+        dateStr
+          ? `You can donate again on ${dateStr}.`
+          : 'You are not available to donate. Enable availability in your profile first.',
+      );
+      return;
+    }
     Alert.alert(
       'Accept request?',
       `Confirm you can donate ${formatBloodGroup(request.bloodGroup)} blood at ${request.hospitalName}.`,
@@ -57,6 +72,8 @@ export default function BrowseRequestsScreen({ navigation }) {
           onPress: async () => {
             try {
               await api.post(`/requests/${request.id}/accept`);
+              // Optimistically remove the accepted card so a fast user can't double-tap
+              setRequests((rs) => rs.filter((r) => r.id !== request.id));
               Alert.alert('Accepted', 'Please proceed to the hospital. Open My Donations to chat.');
               fetchRequests();
             } catch (err) {
@@ -91,9 +108,19 @@ export default function BrowseRequestsScreen({ navigation }) {
         </Text>
 
         {matches ? (
-          <TouchableOpacity style={styles.acceptBtn} onPress={() => handleAccept(item)}>
-            <Text style={styles.acceptBtnText}>Accept</Text>
-          </TouchableOpacity>
+          isLocked ? (
+            <View style={styles.lockedChip}>
+              <Text style={styles.lockedChipText}>
+                {lockedUntil
+                  ? `Locked until ${lockedUntil.toDateString()}`
+                  : 'You are unavailable'}
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.acceptBtn} onPress={() => handleAccept(item)}>
+              <Text style={styles.acceptBtnText}>Accept</Text>
+            </TouchableOpacity>
+          )
         ) : (
           <View style={styles.notMatchChip}>
             <Text style={styles.notMatchChipText}>Not your blood group</Text>
@@ -204,4 +231,14 @@ const styles = StyleSheet.create({
     borderColor:       COLORS.border,
   },
   notMatchChipText: { fontSize: 12, color: COLORS.textMuted, fontWeight: '600' },
+
+  lockedChip: {
+    marginTop:         14,
+    paddingVertical:   10,
+    paddingHorizontal: 12,
+    borderRadius:      10,
+    backgroundColor:   '#FEF3C7',
+    alignItems:        'center',
+  },
+  lockedChipText: { fontSize: 13, color: '#92400E', fontWeight: '600' },
 });

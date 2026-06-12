@@ -43,21 +43,27 @@ export default function DonorProfileScreen({ navigation }) {
   const [modalLoading, setModalLoading]   = useState(false);
   const [resendSeconds, setResendSeconds] = useState(0);
   const resendTimerRef = useRef(null);
+  const mountedRef     = useRef(true);
+
+  // Track mounted state so async ticks (resend countdown, network callbacks)
+  // don't try to update state on an unmounted component.
+  useEffect(() => () => {
+    mountedRef.current = false;
+    if (resendTimerRef.current) clearInterval(resendTimerRef.current);
+  }, []);
 
   function startResendCountdown() {
+    if (!mountedRef.current) return;
     setResendSeconds(60);
     if (resendTimerRef.current) clearInterval(resendTimerRef.current);
     resendTimerRef.current = setInterval(() => {
+      if (!mountedRef.current) { clearInterval(resendTimerRef.current); return; }
       setResendSeconds((s) => {
         if (s <= 1) { clearInterval(resendTimerRef.current); return 0; }
         return s - 1;
       });
     }, 1000);
   }
-
-  useEffect(() => () => {
-    if (resendTimerRef.current) clearInterval(resendTimerRef.current);
-  }, []);
 
   async function handleGetLocation() {
     setLocating(true);

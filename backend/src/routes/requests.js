@@ -200,6 +200,34 @@ router.post('/:id/accept', async (req, res, next) => {
       });
     }
 
+    // Locked donors cannot accept (manually unavailable, or inside 120-day post-donation wait)
+    if (!req.user.isAvailable) {
+      return res.status(403).json({
+        error: 'You are not available to donate right now. Enable availability in your profile.',
+      });
+    }
+    if (req.user.eligibleAgainAt && req.user.eligibleAgainAt > new Date()) {
+      return res.status(403).json({
+        error: `You can donate again on ${req.user.eligibleAgainAt.toDateString()}.`,
+        eligibleAgainAt: req.user.eligibleAgainAt,
+      });
+    }
+
+    // Prevent two simultaneous active commitments — finish the current one first
+    const activeAccept = await prisma.donorResponse.findFirst({
+      where: {
+        donorId: req.user.id,
+        status:  'ACCEPTED',
+        request: { status: 'MATCHED' },
+      },
+      include: { request: { select: { hospitalName: true } } },
+    });
+    if (activeAccept) {
+      return res.status(409).json({
+        error: `You've already accepted a request at ${activeAccept.request.hospitalName}. Complete that donation first.`,
+      });
+    }
+
     await prisma.$transaction([
       prisma.donorResponse.upsert({
         where:  { requestId_donorId: { requestId: request.id, donorId: req.user.id } },
@@ -240,6 +268,12 @@ router.post('/:id/confirm', async (req, res, next) => {
 
     if (request.requesterId !== req.user.id) {
       return res.status(403).json({ error: 'Only the requester can confirm this donation' });
+    }
+
+    // Only an actively MATCHED request can be confirmed — prevents locking the donor
+    // for 120 days on a request that already expired.
+    if (request.status !== 'MATCHED') {
+      return res.status(409).json({ error: 'This request is no longer active.' });
     }
 
     // Verify the donor actually accepted this specific request

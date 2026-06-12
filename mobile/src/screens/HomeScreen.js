@@ -172,6 +172,11 @@ export default function HomeScreen({ navigation }) {
       >
         <Text style={styles.secondaryButtonText}>🔍  Browse Open Requests</Text>
       </TouchableOpacity>
+      {isLocked ? (
+        <Text style={styles.lockedHint}>
+          You can browse, but you can't accept until {formatDate(eligibleAgainAt)}.
+        </Text>
+      ) : null}
 
     </ScrollView>
   );
@@ -268,4 +273,6 @@ const styles = StyleSheet.create({
     alignItems:   'center',
   },
   secondaryButtonText: { color: COLORS.primary, fontSize: 15, fontWeight: '700' },
+
+  lockedHint: { fontSize: 12, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 },
 });

@@ -27,7 +27,13 @@ const CLOSED_MESSAGES = {
 
 export default function DonorRequestScreen({ route, navigation }) {
   const { requestId } = route.params;
-  const userBloodGroup = useAuthStore((s) => s.user?.bloodGroup);
+  const user = useAuthStore((s) => s.user);
+  const userBloodGroup = user?.bloodGroup;
+
+  // Locked = manually unavailable, or inside the 120-day post-donation wait.
+  // Backend remains source of truth; this is a UX hint.
+  const lockedUntil = user?.eligibleAgainAt ? new Date(user.eligibleAgainAt) : null;
+  const isLocked    = !user?.isAvailable || (lockedUntil && lockedUntil > new Date());
 
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -52,6 +58,16 @@ export default function DonorRequestScreen({ route, navigation }) {
   }
 
   async function handleAccept() {
+    if (isLocked) {
+      const dateStr = lockedUntil ? lockedUntil.toDateString() : null;
+      Alert.alert(
+        'You are locked',
+        dateStr
+          ? `You can donate again on ${dateStr}.`
+          : 'You are not available to donate. Enable availability in your profile first.',
+      );
+      return;
+    }
     Alert.alert(
       'Accept this request?',
       'You are committing to go to the hospital and donate blood. The requester will be notified.',
@@ -147,16 +163,26 @@ export default function DonorRequestScreen({ route, navigation }) {
 
       {/* Status / action */}
       {isOpen && matches ? (
-        <TouchableOpacity
-          style={[styles.acceptButton, accepting && styles.buttonDisabled]}
-          onPress={handleAccept}
-          disabled={accepting}
-        >
-          {accepting
-            ? <ActivityIndicator color={COLORS.white} />
-            : <Text style={styles.acceptButtonText}>I will donate blood</Text>
-          }
-        </TouchableOpacity>
+        isLocked ? (
+          <View style={styles.lockedBanner}>
+            <Text style={styles.lockedBannerText}>
+              {lockedUntil
+                ? `You can donate again on ${lockedUntil.toDateString()}.`
+                : 'You are marked unavailable. Enable availability in your profile first.'}
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.acceptButton, accepting && styles.buttonDisabled]}
+            onPress={handleAccept}
+            disabled={accepting}
+          >
+            {accepting
+              ? <ActivityIndicator color={COLORS.white} />
+              : <Text style={styles.acceptButtonText}>I will donate blood</Text>
+            }
+          </TouchableOpacity>
+        )
       ) : !isOpen ? (
         <View style={styles.closedBanner}>
           <Text style={styles.closedText}>{closedMessage}</Text>
@@ -269,6 +295,15 @@ const styles = StyleSheet.create({
     alignItems:      'center',
   },
   closedText: { fontSize: 14, color: COLORS.textMuted, textAlign: 'center' },
+
+  lockedBanner: {
+    backgroundColor: '#FEF3C7',
+    borderRadius:    12,
+    padding:         14,
+    alignItems:      'center',
+    marginTop:       8,
+  },
+  lockedBannerText: { fontSize: 14, color: '#92400E', fontWeight: '600', textAlign: 'center' },
 
   disclaimer: {
     fontSize:   12,

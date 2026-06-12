@@ -46,9 +46,14 @@ export default function ChatScreen({ route, navigation }) {
   const [newMessages, setNewMessages] = useState(0);
   const [atBottom, setAtBottom]       = useState(true);
 
-  const totalRef = useRef(0);
-  const listRef  = useRef(null);
-  const pollRef  = useRef(null);
+  const totalRef   = useRef(0);
+  const listRef    = useRef(null);
+  const pollRef    = useRef(null);
+  const mountedRef = useRef(true);
+
+  // Guard async setState after unmount (prevents the "set state on unmounted" warning
+  // and avoids leaking timers when the user navigates away mid-poll).
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   // Title in header
   useEffect(() => {
@@ -74,6 +79,7 @@ export default function ChatScreen({ route, navigation }) {
     if (!requestId) return;
     try {
       const res = await api.get(`/chat/${requestId}?since=${totalRef.current}`);
+      if (!mountedRef.current) return;
       const data = res.data;
 
       if (data.expired) {
@@ -96,7 +102,7 @@ export default function ChatScreen({ route, navigation }) {
     } catch {
       // non-critical
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, [requestId, atBottom]);
 
