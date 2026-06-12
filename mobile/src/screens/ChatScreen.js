@@ -55,16 +55,18 @@ export default function ChatScreen({ route, navigation }) {
     if (otherName) navigation.setOptions({ title: `Chat — ${otherName}` });
   }, [otherName]);
 
-  // Expiry chip in header
+  // Expiry chip in header — only shown once the chat session has actually started
+  // (i.e. someone sent at least one message, so we have a real ttlSeconds value).
   useEffect(() => {
+    const showChip = expired || (ttlSeconds !== null && ttlSeconds > 0);
     navigation.setOptions({
-      headerRight: () => (
+      headerRight: () => showChip ? (
         <View style={[styles.headerChip, expired && styles.headerChipExpired]}>
           <Text style={[styles.headerChipText, expired && styles.headerChipTextExpired]}>
             {expired ? 'Expired' : `🕐 ${formatTtl(ttlSeconds)}`}
           </Text>
         </View>
-      ),
+      ) : null,
     });
   }, [ttlSeconds, expired, navigation]);
 

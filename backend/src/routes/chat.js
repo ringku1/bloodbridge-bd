@@ -96,8 +96,14 @@ router.get('/:requestId', async (req, res, next) => {
     const key = `chat:${requestId}`;
     const ttl = await redis.ttl(key);
 
+    // ttl === -2 means the Redis key does not exist. That is true in two cases:
+    //   1) no one has sent the first message yet → chat is fresh, NOT expired
+    //   2) the 1-hour TTL already ran out and Redis deleted the key
+    // We can't distinguish those from Redis alone, so we default to "not expired"
+    // and let the empty-state UI handle case (1). Real expiry is detected by
+    // the mobile when ttlSeconds drops to 0 on subsequent polls.
     if (ttl === -2) {
-      return res.json({ messages: [], total: 0, expiresAt: null, ttlSeconds: 0, expired: true });
+      return res.json({ messages: [], total: 0, expiresAt: null, ttlSeconds: null, expired: false });
     }
 
     const total       = await redis.llen(key);
