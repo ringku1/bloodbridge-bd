@@ -131,7 +131,10 @@ Plus a browse page (donors see all open requests across the country and accept o
 
 ```prisma
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // omitApi (preview in Prisma 5.16+) — lets queries strip sensitive columns,
+  // e.g. middleware/auth.js uses `omit: { passwordHash: true }`.
+  previewFeatures = ["omitApi"]
 }
 
 datasource db {

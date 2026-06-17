@@ -112,13 +112,18 @@ On SIGTERM (Docker) or SIGINT (Ctrl-C):
 async function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.slice(7); // strip 'Bearer '
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
-  const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+  const user = await prisma.user.findUnique({
+    where: { id: decoded.userId },
+    omit:  { passwordHash: true },   // keeps the hash out of req.user
+  });
   req.user = user;
   next();
 }
 ```
 
 Why **re-fetch the user on every request** instead of trusting the JWT payload? So that if an admin bans a user (or the user changes their bloodGroup), the change takes effect immediately — without waiting for the token to expire 30 days later.
+
+Why **`omit: { passwordHash: true }`**? Defense in depth — even if a route accidentally did `res.json(req.user)` or `console.log(req.user)`, the bcrypt hash would never leak because Postgres never sent it back. Requires `previewFeatures = ["omitApi"]` in `schema.prisma`'s generator block (preview in Prisma 5.16-5.x, GA in 6.x).
 
 Error mapping: `JsonWebTokenError` → 401 "Invalid token"; `TokenExpiredError` → 401 "Token expired"; anything else → `next(err)` to the error handler.
 
@@ -721,6 +726,17 @@ crons = [
 `cloudflare-worker/index.js`: `scheduled(event, env, ctx)` handler. Matches `event.cron` to pick which endpoint to call. POSTs to `${API_BASE_URL}/cron/{escalate|expiry|eligibility}` with the `x-cron-secret` header. Logs response status + body. Env vars `API_BASE_URL` and `CRON_SECRET` are set in the Cloudflare Workers dashboard.
 
 ## 6.3 Prisma schema — every model
+
+The generator block opts in to the `omitApi` preview feature so queries can drop sensitive columns at the SQL level (see §1.4 for the use in `authMiddleware`):
+
+```prisma
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["omitApi"]
+}
+```
+
+`omitApi` is a preview feature in Prisma 5.16-5.x and GA in 6.x. The project floors `@prisma/client` and `prisma` at `^5.22.0` in `backend/package.json` so fresh installs always have it.
 
 ### User
 ```

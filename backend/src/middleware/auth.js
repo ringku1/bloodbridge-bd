@@ -31,7 +31,14 @@ async function authMiddleware(req, res, next) {
     // Fetch fresh user from DB on each request.
     // This ensures changes (e.g. admin banning a user) take effect immediately
     // without waiting for the token to expire.
-    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    //
+    // `omit: { passwordHash: true }` (Prisma 5.16+) keeps the hash out of
+    // `req.user` entirely — defense in depth against accidentally leaking it
+    // in logs or responses (e.g. via `res.json(req.user)`).
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      omit:  { passwordHash: true },
+    });
 
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
