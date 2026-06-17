@@ -8,7 +8,11 @@
 // After any change to this file, run BOTH commands above.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // omitApi (preview in Prisma 5.16-5.22, GA in 6.x) — lets queries use
+  // `omit: { passwordHash: true }` to keep sensitive columns out of results.
+  // Used by middleware/auth.js so req.user never carries the password hash.
+  previewFeatures = ["omitApi"]
 }
 
 datasource db {
